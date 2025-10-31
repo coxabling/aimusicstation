@@ -84,7 +84,6 @@ const GeographicDistributionMap: React.FC<GeographicDistributionMapProps> = ({ d
         layerGroupRef.current.clearLayers();
 
         // FIX: The value from Object.values() can be of type `unknown`. Convert it to a number before using it in `Math.max`.
-        // Fix for error on line 87: Cast value to number to use in Math.max
         const maxListeners = Object.values(data).reduce((max, val) => Math.max(max, Number(val) || 0), 1);
 
         Object.entries(data).forEach(([code, count]) => {
@@ -92,7 +91,6 @@ const GeographicDistributionMap: React.FC<GeographicDistributionMapProps> = ({ d
             if (!coords) return;
 
             // FIX: The count from Object.entries() can be of type `unknown`. Convert it to a number before using it in an arithmetic operation.
-            // Fix for error on line 95: Cast count to number for use in arithmetic operation
             const numericCount = Number(count) || 0;
             const radius = Math.max(50000, Math.sqrt(numericCount / maxListeners) * 1000000);
             const isSelected = selectedCountry === code;
