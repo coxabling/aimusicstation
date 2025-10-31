@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI music station Submission Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Set theme on initial load, targeting the html element for dark mode
+        try {
+            if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        } catch (e) {
+            console.error('Could not access localStorage to set theme.');
+        }
+
+        // Configure Tailwind to use the class-based dark mode
+        tailwind.config = {
+            darkMode: 'class',
+             theme: {
+                extend: {
+                    colors: {
+                    'brand-blue': '#1a73e8',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-transparent text-gray-800 dark:text-gray-200 p-4 font-sans">
+
+<div class="max-w-md mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+    <!-- Header -->
+    <div class="p-4 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <h2 class="text-xl font-bold">AI Music Station</h2>
+        <div class="flex items-center space-x-2">
+            <div id="status-indicator" class="w-3 h-3 rounded-full bg-gray-400"></div>
+            <span id="status-text" class="text-sm font-medium text-gray-500 dark:text-gray-400">Offline</span>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex border-b border-gray-200 dark:border-gray-700">
+        <button id="tab-now-playing" class="flex-1 p-3 font-semibold text-sm border-b-2 border-brand-blue text-brand-blue">Now Playing</button>
+        <button id="tab-submit" class="flex-1 p-3 font-semibold text-sm border-b-2 border-transparent text-gray-500 dark:text-gray-400">Submit</button>
+    </div>
+
+    <!-- Content -->
+    <div id="content-now-playing" class="p-4">
+        <!-- Now Playing section -->
+        <div id="now-playing-content" class="text-center">
+            <div id="album-art-container" class="w-48 h-48 mx-auto bg-gray-200 dark:bg-gray-700 rounded-lg shadow-md flex items-center justify-center overflow-hidden">
+                <svg class="w-16 h-16 text-gray-400 dark:text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 6l12-3"></path>
+                </svg>
+            </div>
+            <h3 id="track-title" class="text-lg font-bold mt-4 truncate">Station Offline</h3>
+            <p id="track-artist" class="text-sm text-gray-500 dark:text-gray-400 truncate">Start the broadcast to see content</p>
+            <button id="like-button" class="mt-4 p-3 rounded-full text-gray-400 hover:text-red-500 transition-colors disabled:text-gray-600 disabled:cursor-not-allowed" disabled title="Like this track">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
+                </svg>
+            </button>
+        </div>
+        <!-- Up Next section -->
+        <div id="up-next-section" class="mt-6">
+            <h4 class="font-semibold text-gray-600 dark:text-gray-400 mb-2">Up Next</h4>
+            <div id="up-next-list" class="space-y-2 max-h-32 overflow-y-auto">
+                <p class="text-xs text-center text-gray-400">No upcoming tracks.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="content-submit" class="p-4 hidden">
+        <h2 class="text-xl font-bold mb-4 text-center">Send to Station</h2>
+        <form id="submission-form" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Submission Type</label>
+                <div class="flex space-x-4">
+                    <label for="type-shoutout" class="flex items-center space-x-2 cursor-pointer">
+                        <input type="radio" id="type-shoutout" name="type" value="Shoutout" checked class="h-4 w-4 text-brand-blue focus:ring-brand-blue border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800">
+                        <span>Shoutout</span>
+                    </label>
+                    <label for="type-request" class="flex items-center space-x-2 cursor-pointer">
+                        <input type="radio" id="type-request" name="type" value="Song Request" class="h-4 w-4 text-brand-blue focus:ring-brand-blue border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800">
+                        <span>Song Request</span>
+                    </label>
+                </div>
+            </div>
+            <div>
+                <label for="from" class="block text-sm font-medium mb-1">Your Name *</label>
+                <input type="text" id="from" name="from" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700">
+            </div>
+            <div>
+                <label for="location" class="block text-sm font-medium mb-1">Your Location (Optional)</label>
+                <input type="text" id="location" name="location" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700">
+            </div>
+            <div>
+                <label for="message" id="message-label" class="block text-sm font-medium mb-1">Your Message *</label>
+                <textarea id="message" name="message" required rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700"></textarea>
+            </div>
+            <button type="submit" id="submit-button" class="w-full px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-blue disabled:bg-gray-400">
+                Send Submission
+            </button>
+        </form>
+        <div id="success-message" class="hidden text-center p-8">
+            <h3 class="text-lg font-bold">Thank You!</h3>
+            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Your submission has been sent to the station!</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const TENANT_ID = 'default-tenant';
+
+        // --- TABS ---
+        const tabNowPlaying = document.getElementById('tab-now-playing');
+        const tabSubmit = document.getElementById('tab-submit');
+        const contentNowPlaying = document.getElementById('content-now-playing');
+        const contentSubmit = document.getElementById('content-submit');
+
+        tabNowPlaying.addEventListener('click', () => {
+            contentNowPlaying.classList.remove('hidden');
+            contentSubmit.classList.add('hidden');
+            tabNowPlaying.classList.add('border-brand-blue', 'text-brand-blue');
+            tabSubmit.classList.remove('border-brand-blue', 'text-brand-blue');
+        });
+        tabSubmit.addEventListener('click', () => {
+            contentSubmit.classList.remove('hidden');
+            contentNowPlaying.classList.add('hidden');
+            tabSubmit.classList.add('border-brand-blue', 'text-brand-blue');
+            tabNowPlaying.classList.remove('border-brand-blue', 'text-brand-blue');
+        });
+
+        // --- SUBMISSION FORM ---
+        const form = document.getElementById('submission-form');
+        const messageLabel = document.getElementById('message-label');
+        const typeRadios = document.querySelectorAll('input[name="type"]');
+        const submitButton = document.getElementById('submit-button');
+        const formContainer = document.getElementById('submission-form');
+        const successMessage = document.getElementById('success-message');
+
+        function updateMessageLabel() {
+            const selectedType = document.querySelector('input[name="type"]:checked').value;
+            messageLabel.textContent = selectedType === 'Shoutout' ? 'Your Message *' : 'Song Title & Artist *';
+        }
+        typeRadios.forEach(radio => radio.addEventListener('change', updateMessageLabel));
+        updateMessageLabel();
+
+        form.addEventListener('submit', function(event) {
+            event.preventDefault();
+            submitButton.disabled = true;
+            submitButton.textContent = 'Sending...';
+
+            const formData = new FormData(form);
+            const submission = {
+                id: 'widget-' + Date.now(),
+                tenantId: TENANT_ID,
+                type: formData.get('type'),
+                from: formData.get('from'),
+                location: formData.get('location'),
+                message: formData.get('message'),
+                status: 'pending',
+                createdAt: new Date().toISOString()
+            };
+            window.parent.postMessage({ type: 'ai-station-submission', submission }, '*');
+        });
+
+        // --- PLAYER DATA & LIKES ---
+        const trackTitleEl = document.getElementById('track-title');
+        const trackArtistEl = document.getElementById('track-artist');
+        const albumArtContainer = document.getElementById('album-art-container');
+        const likeButton = document.getElementById('like-button');
+        const upNextList = document.getElementById('up-next-list');
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+        
+        let currentTrack = null;
+
+        likeButton.addEventListener('click', () => {
+            if (currentTrack) {
+                likeButton.classList.toggle('text-red-500');
+                likeButton.classList.toggle('text-gray-400');
+                window.parent.postMessage({ 
+                    type: 'ai-station-like', 
+                    trackId: currentTrack.id,
+                    trackTitle: currentTrack.title
+                }, '*');
+            }
+        });
+
+        // Listen for messages from parent (dashboard)
+        window.addEventListener('message', function(event) {
+            if (event.data.type === 'ai-station-submission-success') {
+                formContainer.classList.add('hidden');
+                successMessage.classList.remove('hidden');
+                // Optional: reset form after a delay
+                setTimeout(() => {
+                    form.reset();
+                    updateMessageLabel();
+                    formContainer.classList.remove('hidden');
+                    successMessage.classList.add('hidden');
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Send Submission';
+                }, 3000);
+            } else if (event.data.type === 'ai-station-submission-error') {
+                alert('There was an error sending your submission. Please try again.');
+                submitButton.disabled = false;
+                submitButton.textContent = 'Send Submission';
+            } else if (event.data.type === 'ai-station-update') {
+                const { nowPlaying, upNext } = event.data;
+                currentTrack = nowPlaying;
+
+                // Update Now Playing
+                if (nowPlaying) {
+                    statusIndicator.className = 'w-3 h-3 rounded-full bg-green-500 animate-pulse';
+                    statusText.textContent = 'On Air';
+                    trackTitleEl.textContent = nowPlaying.title || 'Unknown Track';
+                    trackArtistEl.textContent = nowPlaying.artist || nowPlaying.type || 'Unknown Artist';
+                    
+                    const albumArtUrl = nowPlaying.albumArtUrl || null;
+                    if(albumArtUrl) {
+                        albumArtContainer.innerHTML = `<img src="${albumArtUrl}" alt="Album Art" class="w-full h-full object-cover">`;
+                    } else {
+                         albumArtContainer.innerHTML = `<svg class="w-16 h-16 text-gray-400 dark:text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 6l12-3"></path></svg>`;
+                    }
+                    
+                    likeButton.disabled = false;
+                    likeButton.classList.remove('text-red-500');
+                    likeButton.classList.add('text-gray-400');
+                } else {
+                    statusIndicator.className = 'w-3 h-3 rounded-full bg-gray-400';
+                    statusText.textContent = 'Offline';
+                    trackTitleEl.textContent = 'Station Offline';
+                    trackArtistEl.textContent = 'Start the broadcast to see content';
+                    albumArtContainer.innerHTML = `<svg class="w-16 h-16 text-gray-400 dark:text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 6l12-3"></path></svg>`;
+                    likeButton.disabled = true;
+                }
+
+                // Update Up Next
+                upNextList.innerHTML = '';
+                if (upNext && upNext.length > 0) {
+                    upNext.forEach(item => {
+                        const li = document.createElement('div');
+                        li.className = 'flex justify-between items-center text-xs p-2 bg-gray-100 dark:bg-gray-900/50 rounded-md';
+                        li.innerHTML = `
+                            <div>
+                                <p class="font-semibold text-gray-800 dark:text-gray-200">${item.title || 'Unknown'}</p>
+                                <p class="text-gray-500 dark:text-gray-400">${item.artist || item.type || 'Unknown'}</p>
+                            </div>
+                            <span class="font-mono text-gray-400 dark:text-gray-500">${item.duration || '0:00'}</span>
+                        `;
+                        upNextList.appendChild(li);
+                    });
+                } else {
+                    upNextList.innerHTML = '<p class="text-xs text-center text-gray-400">No upcoming tracks.</p>';
+                }
+            }
+        });
+    });
+</script>
+
+</body>
+</html>

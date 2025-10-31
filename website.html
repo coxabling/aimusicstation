@@ -1,0 +1,91 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Music Station</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <!-- Header -->
+    <header class="bg-white shadow-md">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <img id="station-logo" src="" alt="Station Logo" class="h-10 w-10 rounded-full object-cover hidden">
+                <h1 id="station-name" class="text-2xl font-bold tracking-wider">AI Music Station</h1>
+            </div>
+            <a href="/index.html" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700">Dashboard</a>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-6 py-12">
+        <!-- Hero Section -->
+        <section id="hero" class="text-center py-16 bg-white rounded-lg shadow-lg">
+            <h2 id="hero-title" class="text-4xl md:text-5xl font-extrabold leading-tight">Welcome</h2>
+            <p id="hero-subtitle" class="mt-4 text-lg text-gray-600 max-w-2xl mx-auto">Broadcasting the best tunes 24/7.</p>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-12">
+            
+            <!-- Main Content: Schedule & Blog -->
+            <div class="lg:col-span-2 space-y-8">
+                
+                <!-- Schedule Section -->
+                <section id="schedule-section" class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-2xl font-bold mb-4">Live Schedule</h3>
+                    <div id="schedule-list" class="space-y-3">
+                        <!-- Schedule items will be injected here by JS -->
+                        <p class="text-gray-500">Loading schedule...</p>
+                    </div>
+                </section>
+
+                <!-- Blog Section -->
+                <section id="blog-section" class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-2xl font-bold mb-4">From The Blog</h3>
+                    <div id="blog-posts" class="space-y-6">
+                        <!-- Blog post items will be injected here by JS -->
+                         <p class="text-gray-500">Loading latest posts...</p>
+                    </div>
+                </section>
+
+            </div>
+
+            <!-- Sidebar: Widget -->
+            <aside class="lg:col-span-1">
+                <div id="featured-section" class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-2xl font-bold mb-4">Listen & Interact</h3>
+                    <iframe 
+                        src="/widget.html" 
+                        width="100%" 
+                        height="520" 
+                        frameborder="0"
+                        class="rounded-lg"
+                        title="AI Music Station Listener Widget">
+                    </iframe>
+                </div>
+            </aside>
+
+        </div>
+
+        <!-- Fallback Message -->
+        <div id="no-content-message" class="hidden text-center py-20">
+            <h2 class="text-2xl font-bold text-gray-600">Our website is coming soon!</h2>
+            <p class="mt-2 text-gray-500">Check back later for the latest updates from the station.</p>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white mt-12 border-t">
+        <div class="container mx-auto px-6 py-8 text-center text-gray-500">
+            <p>&copy; 2024 <span id="footer-station-name">AI Music Station</span>. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="/website.js" defer></script>
+</body>
+</html>
