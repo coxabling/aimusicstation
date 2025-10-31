@@ -162,11 +162,11 @@ const AppContent: React.FC = () => {
     // Role-based page access
     if (currentUser?.role !== 'Admin' && (activePage === 'settings' || activePage === 'userManagement' || activePage === 'billing')) {
       setActivePage('dashboard');
-      return <Dashboard />;
+      return <Dashboard setActivePage={setActivePage} />;
     }
 
     switch (activePage) {
-      case 'dashboard': return <Dashboard />;
+      case 'dashboard': return <Dashboard setActivePage={setActivePage} />;
       case 'controlRoom': return <ControlRoom />;
       case 'settings': return <StationSettings station={stationSettings} onSave={saveStationSettings} />;
       case 'azuracast': return <AzuracastLink />;
@@ -195,7 +195,7 @@ const AppContent: React.FC = () => {
       case 'billing': return <Billing />;
       case 'showDesigner': return <ShowDesigner />;
       case 'websiteCms': return <WebsiteCMS />;
-      default: return <Dashboard />;
+      default: return <Dashboard setActivePage={setActivePage} />;
     }
   };
 

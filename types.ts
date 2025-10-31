@@ -28,6 +28,7 @@ export interface User {
   credits: number;
   subscriptionPlan: 'Hobby' | 'Pro Broadcaster' | 'Network';
   renewalDate: string;
+  status: 'active' | 'pending';
 }
 
 export interface CreditUsageLog {

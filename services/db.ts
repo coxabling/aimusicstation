@@ -94,8 +94,8 @@ export const seedInitialData = async () => {
         const isoRenewalDate = renewalDate.toISOString();
         
         await Promise.all([
-            promisifyRequest(userStore.put({ id: 'admin@test.com', email: 'admin@test.com', username: 'admin', role: 'Admin', tenantId: defaultTenantId, avatar: null, credits: 50000, subscriptionPlan: 'Pro Broadcaster', renewalDate: isoRenewalDate })),
-            promisifyRequest(userStore.put({ id: 'user@test.com', email: 'user@test.com', username: 'user', role: 'User', tenantId: defaultTenantId, avatar: null, credits: 5000, subscriptionPlan: 'Hobby', renewalDate: isoRenewalDate })),
+            promisifyRequest(userStore.put({ id: 'admin@test.com', email: 'admin@test.com', username: 'admin', role: 'Admin', tenantId: defaultTenantId, avatar: null, credits: 50000, subscriptionPlan: 'Pro Broadcaster', renewalDate: isoRenewalDate, status: 'active' })),
+            promisifyRequest(userStore.put({ id: 'user@test.com', email: 'user@test.com', username: 'user', role: 'User', tenantId: defaultTenantId, avatar: null, credits: 5000, subscriptionPlan: 'Hobby', renewalDate: isoRenewalDate, status: 'active' })),
             promisifyRequest(submissionStore.put({ id: 'sub1', tenantId: defaultTenantId, type: 'Shoutout', from: 'Sarah', location: 'London', message: 'Big shoutout to the whole team working late tonight! Keep the tunes coming!', status: 'pending', createdAt: new Date().toISOString() })),
             promisifyRequest(submissionStore.put({ id: 'sub2', tenantId: defaultTenantId, type: 'Song Request', from: 'Mark', message: 'Cybernetic Dreams', status: 'pending', createdAt: new Date(Date.now() - 3600000).toISOString() })),
             promisifyRequest(submissionStore.put({ id: 'sub3', tenantId: defaultTenantId, type: 'Song Request', from: 'Jen', message: 'Ocean Drive by Miami Nights', status: 'approved', createdAt: new Date(Date.now() - 7200000).toISOString() })),

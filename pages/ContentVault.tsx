@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { vaultContent, vaultCategories, VaultContentItem, mapVaultItemToAudioContent } from '../services/vaultContent';
 import * as db from '../services/db';
@@ -10,6 +11,7 @@ import { PlayCircleIcon, PauseCircleIcon, CheckIcon, DownloadIcon, SparklesIcon 
 import { useAuth } from '../contexts/AuthContext';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { handleAiError } from '../services/ai';
+import { useContent } from '../contexts/ContentContext';
 
 // --- AUDIO HELPER FUNCTIONS ---
 
@@ -91,6 +93,7 @@ const ContentVault: React.FC = () => {
     const { currentItem, playbackState, isPreviewing, playPreview } = usePlayer();
     const isPlaying = playbackState === 'playing';
     const { currentUser, deductCredits } = useAuth();
+    const { loadContent } = useContent();
 
     const loadImportedContent = useCallback(async () => {
         if (!currentUser) return;
@@ -309,7 +312,8 @@ const ContentVault: React.FC = () => {
         };
     
         await db.saveAudioContent(newItem);
-        await loadImportedContent();
+        await loadContent(); // Refresh the main content library
+        await loadImportedContent(); // Refresh the vault's view of imported items
         addToast(`"${filename}" saved to your Audio Content library!`, 'success');
     
         setAiPrompt('');

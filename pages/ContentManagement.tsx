@@ -488,6 +488,47 @@ const AddToPlaylistForm: React.FC<{ item: ContentItem | null; playlists: Playlis
     );
 };
 
+const BulkAddToPlaylistForm: React.FC<{
+    itemCount: number;
+    playlists: Playlist[];
+    onAdd: (playlistIds: string[]) => void;
+    onCancel: () => void;
+}> = ({ itemCount, playlists, onAdd, onCancel }) => {
+    const [selectedPlaylists, setSelectedPlaylists] = useState<string[]>([]);
+
+    const handleCheckboxChange = (playlistId: string, checked: boolean) => {
+        setSelectedPlaylists(prev => checked ? [...prev, playlistId] : prev.filter(id => id !== playlistId));
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onAdd(selectedPlaylists);
+    };
+
+    return (
+        <form onSubmit={handleSubmit}>
+            <p className="text-gray-700 dark:text-gray-300 mb-4">Add <strong>{itemCount} selected items</strong> to the following playlists:</p>
+            <div className="space-y-3 max-h-60 overflow-y-auto border dark:border-gray-600 rounded-md p-3">
+                {playlists.length > 0 ? playlists.map(playlist => (
+                    <label key={playlist.id} className="flex items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="h-5 w-5 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
+                            checked={selectedPlaylists.includes(playlist.id)}
+                            onChange={e => handleCheckboxChange(playlist.id, e.target.checked)}
+                        />
+                        <span className="ml-3 text-sm font-medium text-gray-800 dark:text-gray-200">{playlist.name}</span>
+                    </label>
+                )) : <p className="text-center text-gray-500 dark:text-gray-400">No playlists found. Create one on the Playlists page first.</p>}
+            </div>
+            <div className="flex justify-end pt-6 space-x-2">
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500">Cancel</button>
+                <button type="submit" disabled={selectedPlaylists.length === 0} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 disabled:bg-blue-400">Add to Playlists</button>
+            </div>
+        </form>
+    );
+};
+
 const BulkEditForm: React.FC<{ items: ContentItem[]; onSave: (changes: Partial<ContentItem>) => void; onCancel: () => void; clonedVoices: ClonedVoice[]; }> = ({ items, onSave, onCancel, clonedVoices }) => {
     const [changes, setChanges] = useState<Record<string, any>>({});
     const [fieldsToUpdate, setFieldsToUpdate] = useState<Record<string, boolean>>({});
@@ -677,6 +718,7 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     const [selectedItems, setSelectedItems] = useState<string[]>([]);
     const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
     const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
+    const [isBulkPlaylistModalOpen, setIsBulkPlaylistModalOpen] = useState(false);
     const [playlists, setPlaylists] = useState<Playlist[]>([]);
     const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>([]);
     const [currentItemForPlaylist, setCurrentItemForPlaylist] = useState<ContentItem | null>(null);
@@ -800,6 +842,11 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
         if (selectedContent.length < 2) return false;
         return selectedContent.every(item => item.type === 'Article' || item.type === 'RSS Feed');
     }, [selectedContent]);
+    const areAllSelectedItemsPlayable = useMemo(() => {
+        if (selectedContent.length === 0) return false;
+        const playableTypes: ContentItem['type'][] = ['Music', 'Ad', 'Custom Audio'];
+        return selectedContent.every(item => playableTypes.includes(item.type));
+    }, [selectedContent]);
 
     const handleEdit = (item: ContentItem) => { setEditingItem(item); setIsSingleItemModalOpen(true); };
     
@@ -856,12 +903,22 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     };
     
     const handleOpenPlaylistModal = (item: ContentItem) => { setCurrentItemForPlaylist(item); setIsPlaylistModalOpen(true); };
+    
     const handleAddToPlaylist = async (playlistIds: string[]) => {
         if (!currentItemForPlaylist || !currentUser) return;
         await db.addTracksToPlaylists([currentItemForPlaylist.originalId || currentItemForPlaylist.id], playlistIds, currentUser.tenantId);
         addToast(`"${currentItemForPlaylist.title}" added to ${playlistIds.length} playlist(s).`, 'success');
         setIsPlaylistModalOpen(false);
         setCurrentItemForPlaylist(null);
+    };
+
+    const handleBulkAddToPlaylist = async (playlistIds: string[]) => {
+        if (!currentUser || selectedItems.length === 0) return;
+        await db.addTracksToPlaylists(selectedItems, playlistIds, currentUser.tenantId);
+        addToast(`${selectedItems.length} items added to ${playlistIds.length} playlist(s).`, 'success');
+        setIsBulkPlaylistModalOpen(false);
+        setSelectedItems([]);
+        onSelectionChange([]);
     };
 
     const handleSaveMerge = (newItemData: Partial<ArticleContent>) => {
@@ -924,6 +981,14 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
             <Modal isOpen={isPlaylistModalOpen} onClose={() => setIsPlaylistModalOpen(false)} title="Add to Playlist">
                 <AddToPlaylistForm item={currentItemForPlaylist} playlists={playlists} onAdd={handleAddToPlaylist} onCancel={() => setIsPlaylistModalOpen(false)} />
             </Modal>
+             <Modal isOpen={isBulkPlaylistModalOpen} onClose={() => setIsBulkPlaylistModalOpen(false)} title="Add to Playlist">
+                <BulkAddToPlaylistForm
+                    itemCount={selectedItems.length}
+                    playlists={playlists}
+                    onAdd={handleBulkAddToPlaylist}
+                    onCancel={() => setIsBulkPlaylistModalOpen(false)}
+                />
+            </Modal>
             
             <Modal isOpen={isBulkEditModalOpen} onClose={() => setIsBulkEditModalOpen(false)} title="Bulk Edit">
                 {selectedContent.length > 0 && <BulkEditForm items={selectedContent} onSave={handleBulkSave} onCancel={() => setIsBulkEditModalOpen(false)} clonedVoices={clonedVoices} />}
@@ -975,6 +1040,7 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
                     <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4 p-4 -m-6 mb-0 bg-blue-50 dark:bg-gray-700/50 rounded-t-lg">
                         <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{selectedItems.length} item(s) selected</h2>
                         <div className="flex items-center gap-4 flex-wrap justify-center">
+                             <button onClick={() => setIsBulkPlaylistModalOpen(true)} disabled={!areAllSelectedItemsPlayable} className="px-4 py-2 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600 disabled:bg-gray-400 disabled:cursor-not-allowed">Add to Playlist</button>
                             <button onClick={() => setIsBulkEditModalOpen(true)} disabled={!areAllSelectedItemsSameType} className="px-4 py-2 bg-yellow-500 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-600 disabled:bg-gray-400 disabled:cursor-not-allowed">Edit Selected</button>
                             {areAllSelectedItemsTextBased && <button onClick={() => setIsMergeModalOpen(true)} className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700">Merge & Summarize</button>}
                             <button onClick={handleBulkDelete} className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700">Delete Selected</button>

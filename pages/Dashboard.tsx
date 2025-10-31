@@ -1,6 +1,7 @@
 
 
 import React, { useState, useEffect } from 'react';
+import { Page } from '../App';
 import { RadioIcon, SparklesIcon, MusicIcon, DocumentTextIcon, ScheduleIcon, PlaylistIcon, DollarSignIcon, LinkIcon } from '../components/icons';
 import StatCard from '../components/StatCard';
 import { vaultContent, VaultContentItem, mapVaultItemToAudioContent } from '../services/vaultContent';
@@ -12,7 +13,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useContent } from '../contexts/ContentContext';
 
-const Dashboard: React.FC = () => {
+interface DashboardProps {
+    setActivePage: (page: Page) => void;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
     const { stationSettings, saveStationSettings, currentUser } = useAuth();
     const { addToast } = useToast();
     const { currentItem, playoutQueue, currentQueueIndex, isPreviewing, streamStatus } = usePlayer();
@@ -199,7 +204,7 @@ const Dashboard: React.FC = () => {
                 <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
                     <p className="font-semibold text-gray-700 dark:text-gray-300">Station is Offline</p>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Go to the Schedule page to start your broadcast.</p>
-                     <button onClick={() => { (document.querySelector('a[href="#"]') as HTMLElement)?.click(); /* A bit of a hack to navigate */ }} className="mt-4 px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none flex items-center justify-center space-x-2 mx-auto">
+                     <button onClick={() => setActivePage('schedule')} className="mt-4 px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none flex items-center justify-center space-x-2 mx-auto">
                         <ScheduleIcon />
                         <span>Go to Schedule</span>
                     </button>

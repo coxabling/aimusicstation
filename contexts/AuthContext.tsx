@@ -89,8 +89,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [loadTenantData]);
 
     const switchUser = useCallback(async (userId: string) => {
-        const user = await db.getUser(userId);
+        let user = await db.getUser(userId);
         if (user) {
+            // Activate user on first login
+            if (user.status === 'pending') {
+                user.status = 'active';
+                await db.saveUser(user);
+                addToast(`Welcome, ${user.username}! Your account is now active.`, 'success');
+            }
             setCurrentUser(user);
             sessionStorage.setItem(SESSION_STORAGE_KEY, user.id);
             await loadTenantData(user);
@@ -136,10 +142,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             credits: 5000,
             subscriptionPlan: 'Hobby',
             renewalDate: renewalDate.toISOString(),
+            status: 'pending',
         };
         await db.saveUser(newUser);
         setUsers(prev => [...prev, newUser].sort((a, b) => a.email.localeCompare(b.email)));
-        addToast(`User ${email} created successfully.`, 'success');
+        addToast(`Invitation sent to ${email}. The user will become active once they sign in.`, 'success');
         return true;
     };
     
