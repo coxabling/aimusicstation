@@ -83,15 +83,16 @@ const GeographicDistributionMap: React.FC<GeographicDistributionMapProps> = ({ d
 
         layerGroupRef.current.clearLayers();
 
-        // FIX: Argument of type 'unknown' is not assignable to parameter of type 'number'.
-        const maxListeners = Object.values(data).reduce((max, val) => Math.max(max, Number(val) || 0), 1);
+        // FIX: Explicitly cast `val` to number to resolve type inference issue where it's treated as 'unknown'.
+        // This ensures `Math.max` receives a number and `maxListeners` is correctly typed as a number.
+        const maxListeners = Object.values(data).reduce((max, val) => Math.max(max, Number(val as number) || 0), 1);
 
         Object.entries(data).forEach(([code, count]) => {
             const coords = countryCoordinates[code];
             if (!coords) return;
 
-            // FIX: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
-            const numericCount = Number(count) || 0;
+            const numericCount = Number(count as number) || 0;
+            // FIX: This line now works because `maxListeners` is correctly inferred as a number from the fix above.
             const radius = Math.max(50000, Math.sqrt(numericCount / maxListeners) * 1000000);
             const isSelected = selectedCountry === code;
 
