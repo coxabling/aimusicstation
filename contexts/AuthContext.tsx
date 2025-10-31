@@ -1,4 +1,5 @@
 
+
 import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect } from 'react';
 import { User, Station, Role, CreditUsageLog } from '../types';
 import * as db from '../services/db';
@@ -94,8 +95,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             sessionStorage.setItem(SESSION_STORAGE_KEY, user.id);
             await loadTenantData(user);
             addToast(`Switched to user: ${user.email}`, 'info');
-            // Force a reload to ensure all contexts reset correctly
-            window.location.reload();
         }
     }, [loadTenantData, addToast]);
 

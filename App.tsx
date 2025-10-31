@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -205,7 +206,7 @@ const AppContent: React.FC = () => {
 
   return (
     <ContentProvider>
-      <PlayerProvider>
+      <PlayerProvider key={currentUser?.id}>
         <div className={`flex h-screen bg-gray-100 dark:bg-gray-900 theme-${theme}`}>
           <Sidebar 
             activePage={activePage} 

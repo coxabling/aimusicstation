@@ -1,5 +1,7 @@
 
 
+
+
 import React from 'react';
 import type { Page, Theme } from '../App';
 import { RadioIcon, SparklesIcon, ScheduleIcon, PlaylistIcon, DocumentTextIcon, AnalyticsIcon, SunIcon, MoonIcon, CheckCircleIcon, VoiceIcon, LiveIcon, ShareIcon, UsersIcon, DollarSignIcon, RssIcon, PieChartIcon, ClipboardListIcon, CodeIcon, CloudIcon, LightbulbIcon, InboxIcon } from '../components/icons';
@@ -37,9 +39,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ theme, setTheme, onEnterApp }
     const handleAction = () => {
         if (currentUser && onEnterApp) {
           onEnterApp();
-        } else if (!currentUser) {
+        } else if (!currentUser && onEnterApp) {
           // Log in the default admin user directly for demo purposes
           switchUser('admin@test.com');
+          onEnterApp();
         }
     };
     
