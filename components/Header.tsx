@@ -1,8 +1,10 @@
 
+
 import React from 'react';
-import { MenuIcon, SunIcon, MoonIcon, CheckIcon } from './icons';
+import { MenuIcon, SunIcon, MoonIcon, CheckIcon, BroadcastIcon } from './icons';
 import type { Page, Theme } from '../App';
 import { useAuth } from '../contexts/AuthContext';
+import ActionHub from './ActionHub';
 
 interface HeaderProps {
     title: string;
@@ -10,9 +12,11 @@ interface HeaderProps {
     theme: Theme;
     setTheme: (theme: Theme) => void;
     setActivePage: (page: Page) => void;
+    onActionTrigger: (page: Page, trigger: string) => void;
+    onGoLiveClick: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ title, onMenuClick, theme, setTheme, setActivePage }) => {
+const Header: React.FC<HeaderProps> = ({ title, onMenuClick, theme, setTheme, setActivePage, onActionTrigger, onGoLiveClick }) => {
     const { currentUser, users, switchUser, logout } = useAuth();
     const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
 
@@ -30,6 +34,15 @@ const Header: React.FC<HeaderProps> = ({ title, onMenuClick, theme, setTheme, se
             </div>
             
             <div className="flex items-center space-x-4">
+                 <button 
+                    onClick={onGoLiveClick}
+                    className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-red-500 transition-colors"
+                >
+                    <BroadcastIcon />
+                    <span>Go Live</span>
+                </button>
+                <ActionHub onActionTrigger={onActionTrigger} onNavigate={setActivePage} />
+
                  {/* User Switcher Dropdown */}
                  <div className="relative">
                     <button

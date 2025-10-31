@@ -8,7 +8,11 @@ export interface Station {
   radioFormat: 'Music Radio' | 'Talk Radio';
   vibe?: 'Upbeat' | 'Chill' | 'Playful' | 'Professional' | 'Default';
   enableAiWebResearch?: boolean;
+  failoverPlaylistId?: string;
+  streamUrl?: string;
 }
+
+export type StreamStatus = 'offline' | 'auto-dj' | 'live-dj' | 'failover';
 
 export type Role = 'Admin' | 'User';
 

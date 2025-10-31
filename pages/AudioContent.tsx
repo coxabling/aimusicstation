@@ -1,6 +1,6 @@
 import React, { useState, ChangeEvent, useEffect, useCallback, useRef, useMemo } from 'react';
-import { MusicIcon, PencilIcon, TrashIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, ExclamationCircleIcon } from '../components/icons';
-import type { AudioContent as AudioContentType, Playlist, ContentItem, MusicContent, AdContent, CustomAudioContent, ClonedVoice } from '../types';
+import { MusicIcon, PencilIcon, TrashIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, ExclamationCircleIcon, QueueAddIcon } from '../components/icons';
+import type { AudioContent as AudioContentType, Playlist, ContentItem, MusicContent, AdContent, CustomAudioContent, ClonedVoice, User } from '../types';
 import Modal from '../components/Modal';
 import InputField from '../components/InputField';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -37,6 +37,40 @@ const getAudioDuration = (file: File): Promise<string> => {
         audio.onerror = () => { resolve('0:00'); URL.revokeObjectURL(audio.src); };
     });
 };
+
+const mapAudioToContentItem = (audio: AudioContentType, currentUser: User): ContentItem | null => {
+    if (audio.type === 'Music') {
+        return {
+            id: audio.id,
+            tenantId: currentUser.tenantId,
+            title: audio.filename,
+            type: 'Music',
+            artist: audio.artist || 'Unknown',
+            duration: audio.duration,
+            date: audio.dateTime,
+            url: audio.url,
+            file: audio.file,
+            genre: audio.genre,
+            useAiAnnouncer: audio.announceTrack,
+            announcerVoice: audio.announcementVoice,
+            announcementWithBackgroundMusic: audio.announcementWithBackgroundMusic,
+        };
+    }
+    if (audio.type === 'Jingle' || audio.type === 'Ad') {
+        return {
+            id: audio.id,
+            tenantId: currentUser.tenantId,
+            title: audio.filename,
+            type: audio.type === 'Jingle' ? 'Custom Audio' : 'Ad',
+            artist: audio.artist || (audio.type === 'Jingle' ? 'Station Audio' : 'Advertisement'),
+            duration: audio.duration,
+            date: audio.dateTime,
+            url: audio.url,
+            file: audio.file,
+        };
+    }
+    return null;
+}
 
 // --- SINGLE & BULK UPLOAD FORMS ---
 
@@ -274,11 +308,16 @@ const BulkUploadForm: React.FC<{
     );
 };
 
-const AudioContent: React.FC = () => {
+interface AudioContentProps {
+    actionTrigger?: string;
+    clearActionTrigger?: () => void;
+}
+
+const AudioContent: React.FC<AudioContentProps> = ({ actionTrigger, clearActionTrigger }) => {
     const { audioContentItems, loadContent, isLoading } = useContent();
     const { addToast } = useToast();
     const { currentUser } = useAuth();
-    const { currentItem, playbackState, isPreviewing, playPreview } = usePlayer();
+    const { currentItem, playbackState, isPreviewing, playPreview, addToQueue } = usePlayer();
 
     const [isSingleItemModalOpen, setIsSingleItemModalOpen] = useState(false);
     const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
@@ -293,6 +332,14 @@ const AudioContent: React.FC = () => {
     const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>([]);
     
     const isPlaying = playbackState === 'playing';
+
+    useEffect(() => {
+        if (actionTrigger === 'uploadAudio' && clearActionTrigger) {
+            setEditingItem({});
+            setIsSingleItemModalOpen(true);
+            clearActionTrigger();
+        }
+    }, [actionTrigger, clearActionTrigger]);
 
     useEffect(() => {
         const fetchVoices = async () => {
@@ -429,6 +476,17 @@ const AudioContent: React.FC = () => {
         setIsDeleteModalOpen(false);
         setItemsToDelete([]);
     };
+
+    const handleAddToQueue = (item: AudioContentType) => {
+        if (!currentUser) return;
+        const contentItem = mapAudioToContentItem(item, currentUser);
+        if (contentItem) {
+            addToQueue([contentItem]);
+            addToast(`"${contentItem.title}" added to the playout queue.`, 'success');
+        } else {
+            addToast(`Could not add "${item.filename}" to queue.`, 'error');
+        }
+    };
     
     return (
         <>
@@ -528,6 +586,7 @@ const AudioContent: React.FC = () => {
                                     <td className="px-4 py-4 text-center"><Checkmark checked={item.published}/></td>
                                     <td className="px-4 py-4"><div className="flex items-center space-x-3">
                                         <button onClick={() => playPreview(item as any)} className="text-brand-blue hover:text-blue-700">{isPreviewing && currentItem?.id === item.id && isPlaying ? <PauseCircleIcon /> : <PlayCircleIcon />}</button>
+                                        <button onClick={() => handleAddToQueue(item)} className="text-green-500 hover:text-green-700" title="Add to Playout Queue"><QueueAddIcon /></button>
                                         <button onClick={() => { setEditingItem(item); setIsSingleItemModalOpen(true); }} className="text-brand-blue hover:text-blue-700"><PencilIcon /></button>
                                         <button onClick={() => handleDelete(item.id)} className="text-red-500 hover:text-red-700"><TrashIcon /></button>
                                     </div></td>

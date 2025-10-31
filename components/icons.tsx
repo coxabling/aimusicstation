@@ -1,11 +1,16 @@
-
-
 import React from 'react';
 
 const IconWrapper: React.FC<{ children: React.ReactNode, className?: string }> = ({ children, className = "h-5 w-5" }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         {children}
     </svg>
+);
+
+export const BroadcastIcon: React.FC<{ className?: string }> = ({ className = "h-5 w-5" }) => (
+    <IconWrapper className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586" />
+    </IconWrapper>
 );
 
 export const RadioIcon: React.FC = () => (
@@ -30,6 +35,12 @@ export const XIcon: React.FC = () => (
 export const DashboardIcon: React.FC = () => (
     <IconWrapper>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+    </IconWrapper>
+);
+
+export const InboxIcon: React.FC = () => (
+    <IconWrapper>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
     </IconWrapper>
 );
 
@@ -88,6 +99,12 @@ export const MoonIcon: React.FC = () => (
     </IconWrapper>
 );
 
+export const LightbulbIcon: React.FC<{className?: string}> = ({ className = "h-6 w-6" }) => (
+    <IconWrapper className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+    </IconWrapper>
+);
+
 export const PencilIcon: React.FC = () => (
     <IconWrapper className="h-4 w-4">
         <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" />
@@ -103,6 +120,13 @@ export const TrashIcon: React.FC = () => (
 export const PlaylistAddIcon: React.FC = () => (
     <IconWrapper className="h-4 w-4">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </IconWrapper>
+);
+
+export const QueueAddIcon: React.FC<{ className?: string }> = ({ className = "h-4 w-4" }) => (
+    <IconWrapper className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h10" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16 17h6m-3-3v6" />
     </IconWrapper>
 );
 
@@ -136,6 +160,13 @@ export const GlobeIcon: React.FC = () => (
         <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9V3m0 18a9 9 0 009-9m-9 9a9 9 0 00-9-9" />
     </IconWrapper>
 );
+
+export const CloudIcon: React.FC = () => (
+    <IconWrapper>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999A5.002 5.002 0 105.18 6.64a4.002 4.002 0 00-2.08 8.36" />
+    </IconWrapper>
+);
+
 
 export const SortIcon: React.FC = () => (
     <IconWrapper className="h-3 w-3 ml-1.5">
@@ -301,9 +332,16 @@ export const RouteIcon: React.FC = () => (
     </IconWrapper>
 );
 
-export const PlusIcon: React.FC = () => (
-    <IconWrapper className="h-4 w-4">
+export const PlusIcon: React.FC<{className?: string}> = ({ className = "h-4 w-4" }) => (
+    <IconWrapper className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+    </IconWrapper>
+);
+
+export const UploadIcon: React.FC<{className?: string}> = ({className = "h-5 w-5"}) => (
+    <IconWrapper className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M12 12v9" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 15l3-3 3 3" />
     </IconWrapper>
 );
 
@@ -413,8 +451,9 @@ export const ClipboardListIcon: React.FC = () => (
     </IconWrapper>
 );
 
-export const TrophyIcon: React.FC = () => (
-    <IconWrapper>
+// FIX: Update TrophyIcon to accept an optional className prop.
+export const TrophyIcon: React.FC<{ className?: string }> = ({ className = "h-5 w-5" }) => (
+    <IconWrapper className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M3 9h2m14 0h2M3 15h2m14 0h2M9 21h6" />
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 21V9.5C12 7.015 10.485 5 8.5 5S5 7.015 5 9.5V17a4 4 0 004 4zm0 0v-1.5m0 1.5c-2.485 0-4.5-2.015-4.5-4.5V9.5C7.5 7.015 9.015 5 11 5s3.5 2.015 3.5 4.5V17a4 4 0 01-4 4z" />
     </IconWrapper>

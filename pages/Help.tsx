@@ -18,6 +18,10 @@ const faqs: FAQCategory[] = [
         category: 'Getting Started',
         questions: [
             {
+                q: 'What is the "Control Room"?',
+                a: 'The Control Room is your new central hub for managing the station. It aggregates all items that require your attention—pending song requests, shoutouts, unapproved RSS articles, and draft social media posts—into a single, unified inbox. You can approve, reject, and manage content directly from this page.'
+            },
+            {
                 q: 'How do I set up my station for the first time?',
                 a: 'Navigate to "Station Settings" in the sidebar. Here, you can define your station\'s name, description, logo, and overall format (Music Radio vs. Talk Radio). These settings affect how the AI generates content and schedules.'
             },
@@ -32,6 +36,36 @@ const faqs: FAQCategory[] = [
         ]
     },
     {
+        category: 'Cloud Broadcasting',
+        questions: [
+             {
+                q: 'How does the cloud broadcast work?',
+                a: 'Your station now runs in the cloud 24/7. When you click "Go Live" on the Schedule page, you start the "Auto DJ," which plays through your generated schedule automatically. The player at the bottom of the screen is your monitor for what\'s currently "on air." You can close your browser, and the station will stay online.'
+            },
+            {
+                q: 'How do I go live as a DJ?',
+                a: 'Click the "Go Live" button in the main header. A modal will open, allowing you to connect your microphone. When you "Start Broadcast," you will seamlessly take over from the Auto DJ. When you\'re finished, simply "End Broadcast," and the Auto DJ will immediately pick up where the schedule left off.'
+            },
+            {
+                q: 'What is a failover playlist and how do I set one?',
+                a: 'A failover playlist is a backup that automatically plays to prevent "dead air" (silence). You can set one in "Station Settings" under "Cloud Broadcasting". If your main schedule runs out of content or a live DJ disconnects unexpectedly, the system will switch to your failover playlist, keeping your station on the air.'
+            },
+        ]
+    },
+    {
+        category: 'General Workflow',
+        questions: [
+            {
+                q: 'What is the "+" button in the header?',
+                a: 'This is the "Action Hub." It\'s a universal create button that gives you instant access to common tasks like uploading audio, creating a playlist, or composing a social post from anywhere in the app, saving you time and clicks.'
+            },
+            {
+                q: 'How do I quickly add a song to the live show?',
+                a: 'This is the "Queue Everywhere" feature. Look for the "Add to Queue" icon next to any track in "Content Management", "Audio Content", or even next to generated content in the "AI Content Studio". Clicking it instantly adds that item to the end of the live playout queue.'
+            },
+        ]
+    },
+    {
         category: 'Content Management',
         questions: [
             {
@@ -40,7 +74,7 @@ const faqs: FAQCategory[] = [
             },
             {
                 q: 'How do I add music to my station?',
-                a: 'You can add music in two main ways: 1) Go to "Audio Content" and use the "Upload Audio" button for single or bulk uploads. 2) Go to "Content Management" and use the "Add Content" or "Bulk Upload" buttons.'
+                a: 'You can add music in two main ways: 1) Go to "Audio Content" and use the "Bulk Upload" button. 2) Use the "Action Hub" (+) in the header and select "Upload Audio" to open the upload modal from anywhere.'
             },
             {
                 q: 'What is the Content Vault?',
@@ -53,7 +87,7 @@ const faqs: FAQCategory[] = [
         questions: [
             {
                 q: 'How do I start my broadcast?',
-                a: 'Go to the "Schedule" page. Configure your generation settings (either "AI Format" or "Show Designer") and click "Go Live". The AI will create a playout queue based on your content library and chosen settings, and the station player will begin broadcasting.'
+                a: 'Go to the "Schedule" page. Configure your generation settings (either "AI Format" or "Show Designer") and click "Go Live". This will start the cloud "Auto DJ" which will run 24/7, and the player at the bottom of the app will begin monitoring the live feed.'
             },
             {
                 q: 'What is the "Show Designer" and what are "Clockwheels"?',
@@ -76,6 +110,10 @@ const faqs: FAQCategory[] = [
     {
         category: 'AI Features',
         questions: [
+            {
+                q: 'What is the AI Co-pilot?',
+                a: 'The Co-pilot is your persistent AI assistant, accessible via the lightbulb button. It offers proactive, contextual suggestions based on what you\'re doing. For example, it can offer to build a playlist from your dashboard, generate social posts for a selected song in Content Management, or write a transition script between two songs on the Schedule page.'
+            },
             {
                 q: 'What does the "Show Prep" assistant do?',
                 a: 'The "Show Prep" assistant is like having a personal producer. Select one of your playlists, and the AI will generate a complete set of on-air notes for the host. This includes interesting facts about the songs and artists, creative segues to transition between tracks, and engaging questions to ask your audience.'

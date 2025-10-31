@@ -8,6 +8,7 @@ import { SocialPost } from '../types';
 import { ShareIcon, SparklesIcon, XIcon, FacebookIcon, TrashIcon, PencilIcon, CheckIcon, DownloadIcon } from '../components/icons';
 import { generateWithRetry } from '../services/ai';
 import Modal from '../components/Modal';
+import InputField from '../components/InputField';
 
 const PostCard: React.FC<{
     post: SocialPost;
@@ -288,14 +289,65 @@ const VideoSnippetGenerator: React.FC = () => {
     );
 };
 
-const SocialMediaManager: React.FC = () => {
+const ComposePostForm: React.FC<{
+    onSave: (post: Partial<SocialPost>) => void;
+    onCancel: () => void;
+}> = ({ onSave, onCancel }) => {
+    const [platform, setPlatform] = useState<'X' | 'Facebook'>('X');
+    const [content, setContent] = useState('');
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!content.trim()) return;
+        onSave({ platform, content });
+    };
+    
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+                <label htmlFor="platform" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Platform</label>
+                <select id="platform" value={platform} onChange={e => setPlatform(e.target.value as any)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700">
+                    <option>X</option>
+                    <option>Facebook</option>
+                </select>
+            </div>
+            <InputField 
+                label="Content"
+                name="content"
+                isTextarea
+                value={content}
+                onChange={e => setContent(e.target.value)}
+                placeholder="What's on your mind?"
+            />
+                <div className="flex justify-end pt-4 space-x-2">
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Save as Draft</button>
+            </div>
+        </form>
+    );
+}
+
+interface SocialMediaManagerProps {
+    actionTrigger?: string;
+    clearActionTrigger?: () => void;
+}
+
+const SocialMediaManager: React.FC<SocialMediaManagerProps> = ({ actionTrigger, clearActionTrigger }) => {
     const { stationSettings, currentUser, deductCredits } = useAuth();
     const player = usePlayer();
     const { addToast } = useToast();
     const [posts, setPosts] = useState<SocialPost[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
     const POSTS_COST = 40;
+
+    useEffect(() => {
+        if (actionTrigger === 'composePost' && clearActionTrigger) {
+            setIsComposeModalOpen(true);
+            clearActionTrigger();
+        }
+    }, [actionTrigger, clearActionTrigger]);
 
     useEffect(() => {
         const loadPosts = async () => {
@@ -430,102 +482,123 @@ Do not include any other text, explanations, or markdown in your response.`;
         addToast('Post deleted.', 'info');
     };
 
+    const handleSaveComposedPost = async (post: Partial<SocialPost>) => {
+        if (!currentUser) return;
+        const newPost: SocialPost = {
+            id: `post-${Date.now()}`,
+            tenantId: currentUser.tenantId,
+            platform: post.platform!,
+            content: post.content!,
+            status: 'draft',
+            createdAt: new Date().toISOString(),
+        };
+        await db.saveSocialPost(newPost);
+        setPosts(prev => [newPost, ...prev]);
+        addToast('New post saved as draft.', 'success');
+        setIsComposeModalOpen(false);
+    };
+
     const drafts = useMemo(() => posts.filter(p => p.status === 'draft'), [posts]);
     const scheduledPosts = useMemo(() => posts.filter(p => p.status === 'scheduled').sort((a,b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime()), [posts]);
     const sentPosts = useMemo(() => posts.filter(p => p.status === 'sent'), [posts]);
 
     return (
-        <div className="space-y-8">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                    <div className="flex items-center space-x-3">
-                        <ShareIcon />
+        <>
+            <Modal isOpen={isComposeModalOpen} onClose={() => setIsComposeModalOpen(false)} title="Compose New Social Post">
+                <ComposePostForm onSave={handleSaveComposedPost} onCancel={() => setIsComposeModalOpen(false)} />
+            </Modal>
+            <div className="space-y-8">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                        <div className="flex items-center space-x-3">
+                            <ShareIcon />
+                            <div>
+                                <h2 className="text-2xl font-bold text-gray-800 dark:text-white">AI Social Media Manager</h2>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Generate, schedule, and manage social media content for your station.</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={handleGeneratePosts}
+                            disabled={isGenerating}
+                            className="flex items-center justify-center w-full sm:w-auto px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400 whitespace-nowrap"
+                        >
+                            <SparklesIcon className="h-5 w-5 mr-2" />
+                            {isGenerating ? 'Generating...' : `Generate New Drafts (${POSTS_COST} Credits)`}
+                        </button>
+                    </div>
+
+                    {isGenerating && (
+                        <div className="text-center p-8">
+                            <svg className="animate-spin h-8 w-8 text-brand-blue mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <p className="mt-4 text-gray-600 dark:text-gray-300">The AI is crafting some fresh posts for you...</p>
+                        </div>
+                    )}
+                </div>
+
+                {isLoading ? (
+                    <div className="text-center p-8"><p className="text-gray-500 dark:text-gray-400">Loading posts...</p></div>
+                ) : (
+                    <div className="space-y-8">
+                        {/* Drafts Section */}
                         <div>
-                            <h2 className="text-2xl font-bold text-gray-800 dark:text-white">AI Social Media Manager</h2>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Generate, schedule, and manage social media content for your station.</p>
+                            <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Drafts ({drafts.length})</h3>
+                            {drafts.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {drafts.map(post => (
+                                        <PostCard key={post.id} post={post} onUpdate={handleUpdatePost} onDelete={handleDeletePost} />
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
+                                    <p className="text-gray-500 dark:text-gray-400">No drafts to show.</p>
+                                    <p className="text-sm text-gray-400 dark:text-gray-500">Click "Generate New Drafts" to get started.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Scheduled Section */}
+                        <div>
+                            <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Scheduled ({scheduledPosts.length})</h3>
+                            {scheduledPosts.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {scheduledPosts.map(post => (
+                                        <PostCard key={post.id} post={post} onUpdate={handleUpdatePost} onDelete={handleDeletePost} />
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
+                                    <p className="text-gray-500 dark:text-gray-400">You haven't scheduled any posts yet.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Sent Section */}
+                        <div>
+                            <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Sent ({sentPosts.length})</h3>
+                            {sentPosts.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {sentPosts.map(post => (
+                                        <PostCard key={post.id} post={post} onUpdate={handleUpdatePost} onDelete={handleDeletePost} />
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
+                                    <p className="text-gray-500 dark:text-gray-400">No posts have been sent yet.</p>
+                                </div>
+                            )}
                         </div>
                     </div>
-                    <button
-                        onClick={handleGeneratePosts}
-                        disabled={isGenerating}
-                        className="flex items-center justify-center w-full sm:w-auto px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400 whitespace-nowrap"
-                    >
-                        <SparklesIcon className="h-5 w-5 mr-2" />
-                        {isGenerating ? 'Generating...' : `Generate New Drafts (${POSTS_COST} Credits)`}
-                    </button>
-                </div>
-
-                {isGenerating && (
-                    <div className="text-center p-8">
-                        <svg className="animate-spin h-8 w-8 text-brand-blue mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <p className="mt-4 text-gray-600 dark:text-gray-300">The AI is crafting some fresh posts for you...</p>
-                    </div>
                 )}
-            </div>
-
-            {isLoading ? (
-                 <div className="text-center p-8"><p className="text-gray-500 dark:text-gray-400">Loading posts...</p></div>
-            ) : (
-                <div className="space-y-8">
-                    {/* Drafts Section */}
-                    <div>
-                        <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Drafts ({drafts.length})</h3>
-                        {drafts.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {drafts.map(post => (
-                                    <PostCard key={post.id} post={post} onUpdate={handleUpdatePost} onDelete={handleDeletePost} />
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
-                                <p className="text-gray-500 dark:text-gray-400">No drafts to show.</p>
-                                <p className="text-sm text-gray-400 dark:text-gray-500">Click "Generate New Drafts" to get started.</p>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Scheduled Section */}
-                    <div>
-                        <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Scheduled ({scheduledPosts.length})</h3>
-                         {scheduledPosts.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {scheduledPosts.map(post => (
-                                    <PostCard key={post.id} post={post} onUpdate={handleUpdatePost} onDelete={handleDeletePost} />
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
-                                <p className="text-gray-500 dark:text-gray-400">You haven't scheduled any posts yet.</p>
-                            </div>
-                        )}
-                    </div>
-
-                     {/* Sent Section */}
-                    <div>
-                        <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Sent ({sentPosts.length})</h3>
-                         {sentPosts.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {sentPosts.map(post => (
-                                    <PostCard key={post.id} post={post} onUpdate={handleUpdatePost} onDelete={handleDeletePost} />
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
-                                <p className="text-gray-500 dark:text-gray-400">No posts have been sent yet.</p>
-                            </div>
-                        )}
-                    </div>
+                
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                    <VideoSnippetGenerator />
                 </div>
-            )}
-            
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-                <VideoSnippetGenerator />
-            </div>
 
-        </div>
+            </div>
+        </>
     );
 };
 

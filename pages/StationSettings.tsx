@@ -1,8 +1,10 @@
 import React, { useState, ChangeEvent, FormEvent, useEffect } from 'react';
 import InputField from '../components/InputField';
-import type { Station } from '../types';
+import type { Playlist, Station } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import ToggleSwitch from '../components/ToggleSwitch';
+import * as db from '../services/db';
+import { useAuth } from '../contexts/AuthContext';
 
 interface StationSettingsProps {
     station: Station;
@@ -11,11 +13,19 @@ interface StationSettingsProps {
 
 const StationSettings: React.FC<StationSettingsProps> = ({ station: initialStation, onSave }) => {
     const { addToast } = useToast();
+    const { currentUser } = useAuth();
     const [station, setStation] = useState<Station>(initialStation);
+    const [playlists, setPlaylists] = useState<Playlist[]>([]);
 
     useEffect(() => {
         setStation(initialStation);
     }, [initialStation]);
+
+    useEffect(() => {
+        if (currentUser) {
+            db.getAllPlaylists(currentUser.tenantId).then(setPlaylists);
+        }
+    }, [currentUser]);
 
     const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -143,6 +153,28 @@ const StationSettings: React.FC<StationSettingsProps> = ({ station: initialStati
                         onChange={(val) => handleToggle('enableAiWebResearch', val)}
                     />
                     <p className="-mt-4 text-xs text-gray-500 dark:text-gray-400">Allows the AI announcer to search for real-time facts about songs and artists to create more varied announcements.</p>
+                    
+                     <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-bold text-gray-800 dark:text-white">Cloud Broadcasting Settings</h3>
+                        <InputField label="Public Stream URL" name="streamUrl" value={station.streamUrl || ''} onChange={handleChange} placeholder="e.g., https://your-stream.com/live" />
+                        
+                        <div>
+                            <label htmlFor="failoverPlaylist" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Failover Playlist</label>
+                            <select 
+                                id="failoverPlaylist"
+                                name="failoverPlaylistId"
+                                value={station.failoverPlaylistId || ''}
+                                onChange={handleChange}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700"
+                            >
+                                <option value="">-- No Failover --</option>
+                                {playlists.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                            </select>
+                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">This playlist will automatically play if the main schedule ends or a live DJ disconnects, preventing dead air.</p>
+                        </div>
+                    </div>
 
 
                     <div>

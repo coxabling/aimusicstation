@@ -2,7 +2,7 @@
 
 import React from 'react';
 import type { Page } from '../App';
-import { DashboardIcon, SettingsIcon, LinkIcon, MusicIcon, PlaylistIcon, AnalyticsIcon, RadioIcon, XIcon, AudioWaveIcon, ScheduleIcon, SparklesIcon, VaultIcon, MapIcon, VoiceIcon, CodeIcon, RssIcon, LiveIcon, HelpIcon, ShareIcon, UsersIcon, DollarSignIcon, ClipboardListIcon, PieChartIcon, SlidersIcon, GlobeIcon } from './icons';
+import { DashboardIcon, SettingsIcon, LinkIcon, MusicIcon, PlaylistIcon, AnalyticsIcon, RadioIcon, XIcon, AudioWaveIcon, ScheduleIcon, SparklesIcon, VaultIcon, MapIcon, VoiceIcon, CodeIcon, RssIcon, LiveIcon, HelpIcon, ShareIcon, UsersIcon, DollarSignIcon, ClipboardListIcon, PieChartIcon, SlidersIcon, GlobeIcon, InboxIcon } from './icons';
 import { Station } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -65,6 +65,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage, sidebarOpe
         </div>
         <nav className="flex-1 overflow-y-auto p-4 space-y-2">
             <NavLink icon={<DashboardIcon />} label="Dashboard" isActive={activePage === 'dashboard'} onClick={() => handleNavClick('dashboard')} />
+            <NavLink icon={<InboxIcon />} label="Control Room" isActive={activePage === 'controlRoom'} onClick={() => handleNavClick('controlRoom')} />
             {isAdmin && <NavLink icon={<SettingsIcon />} label="Station Settings" isActive={activePage === 'settings'} onClick={() => handleNavClick('settings')} /> }
             {isAdmin && <NavLink icon={<UsersIcon />} label="User Management" isActive={activePage === 'userManagement'} onClick={() => handleNavClick('userManagement')} /> }
             {isAdmin && <NavLink icon={<DollarSignIcon />} label="AI Credits & Billing" isActive={activePage === 'billing'} onClick={() => handleNavClick('billing')} /> }

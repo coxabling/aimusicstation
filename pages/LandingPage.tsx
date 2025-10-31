@@ -2,7 +2,7 @@
 
 import React from 'react';
 import type { Page, Theme } from '../App';
-import { RadioIcon, SparklesIcon, ScheduleIcon, PlaylistIcon, DocumentTextIcon, AnalyticsIcon, SunIcon, MoonIcon, CheckCircleIcon, VoiceIcon, LiveIcon, ShareIcon, UsersIcon, DollarSignIcon, RssIcon, PieChartIcon, ClipboardListIcon, CodeIcon } from '../components/icons';
+import { RadioIcon, SparklesIcon, ScheduleIcon, PlaylistIcon, DocumentTextIcon, AnalyticsIcon, SunIcon, MoonIcon, CheckCircleIcon, VoiceIcon, LiveIcon, ShareIcon, UsersIcon, DollarSignIcon, RssIcon, PieChartIcon, ClipboardListIcon, CodeIcon, CloudIcon, LightbulbIcon, InboxIcon } from '../components/icons';
 import { useAuth } from '../contexts/AuthContext';
 
 const FeatureCard: React.FC<{ icon: React.ReactNode; title: string; children: React.ReactNode; }> = ({ icon, title, children }) => (
@@ -85,12 +85,12 @@ const LandingPage: React.FC<LandingPageProps> = ({ theme, setTheme, onEnterApp }
                 <section className="pt-32 pb-20 text-center bg-white dark:bg-gray-800">
                     <div className="container mx-auto px-6">
                         <h2 className="text-4xl md:text-6xl font-extrabold text-gray-900 dark:text-white leading-tight">
-                            Create Your AI-Powered Radio Station.
+                            Create Your AI-Powered Cloud Radio Station.
                             <br />
                             <span className="text-brand-blue">Instantly.</span>
                         </h2>
                         <p className="mt-6 text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
-                            Stop juggling spreadsheets and complex software. Let our advanced AI automate your content creation, scheduling, and playout, so you can focus on building a station your listeners will love.
+                            Stop juggling complex software. Let our advanced AI automate your content creation, scheduling, and 24/7 cloud playout, so you can focus on building a station your listeners will love.
                         </p>
                         <button 
                             onClick={handleAction}
@@ -108,6 +108,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ theme, setTheme, onEnterApp }
                             <p className="mt-4 text-lg text-gray-600 dark:text-gray-400">Everything you need to run a professional radio station, supercharged by AI.</p>
                         </div>
                         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                             <FeatureCard icon={<CloudIcon />} title="Always-On Cloud Broadcasting">
+                                Run your station 24/7 without leaving a PC on. Our cloud Auto DJ handles the schedule, with seamless handoffs for live DJs connecting from anywhere.
+                            </FeatureCard>
+                             <FeatureCard icon={<LightbulbIcon />} title="AI Co-pilot">
+                                Your persistent AI assistant offers proactive, contextual suggestions. From generating playlists on your dashboard to writing transitions on your schedule, it's always ready to help.
+                            </FeatureCard>
+                             <FeatureCard icon={<InboxIcon />} title="Unified Control Room">
+                                Manage everything from one place. Approve submissions, schedule posts, and initiate any creation task from a central inbox and a universal action button.
+                            </FeatureCard>
                             <FeatureCard icon={<SparklesIcon />} title="AI Content Studio">
                                 Generate articles, create scripts for ads, get real-time sports updates, and even get instant traffic &amp; weather reports for your broadcast.
                             </FeatureCard>
@@ -134,15 +143,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ theme, setTheme, onEnterApp }
                             </FeatureCard>
                             <FeatureCard icon={<UsersIcon />} title="Audience Interaction">
                                 Engage your listeners directly. Approve and queue up song requests and shoutouts from a dedicated dashboard with AI-powered moderation.
-                            </FeatureCard>
-                            <FeatureCard icon={<DollarSignIcon />} title="Ad Campaign Manager">
-                                Monetize your station by creating and managing ad campaigns. The AI playout generator automatically inserts ads based on your schedule format.
-                            </FeatureCard>
-                            <FeatureCard icon={<RssIcon />} title="Automated Live Feeds">
-                                Keep your content fresh. Automatically pull in news from any RSS feed, or generate real-time traffic and weather reports for any location.
-                            </FeatureCard>
-                             <FeatureCard icon={<CodeIcon />} title="Liquidsoap Script Generator">
-                                For advanced users, generate custom Liquidsoap scripts for your self-hosted Shoutcast or Icecast servers, complete with live DJ fallback options.
                             </FeatureCard>
                         </div>
                     </div>

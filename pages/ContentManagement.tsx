@@ -1,5 +1,5 @@
 import React, { useState, useMemo, ChangeEvent, useEffect, useCallback } from 'react';
-import { MusicIcon, PencilIcon, TrashIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, SparklesIcon, GlobeIcon, ExclamationCircleIcon } from '../components/icons';
+import { MusicIcon, PencilIcon, TrashIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, SparklesIcon, GlobeIcon, ExclamationCircleIcon, QueueAddIcon } from '../components/icons';
 import Modal from '../components/Modal';
 import InputField from '../components/InputField';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -659,7 +659,11 @@ const MergeSummarizeForm: React.FC<{ items: (ArticleContent | RssFeedContent)[];
     );
 };
 
-const ContentManagement: React.FC = () => {
+interface ContentManagementProps {
+  onSelectionChange: (selectedIds: string[]) => void;
+}
+
+const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange }) => {
     const { contentItems, addContentItem, bulkAddContentItems, bulkAddTextContentItems, updateContentItem, deleteContentItems, bulkUpdateContentItems, isLoading } = useContent();
     const { currentUser } = useAuth();
     const [isSingleItemModalOpen, setIsSingleItemModalOpen] = useState(false);
@@ -683,7 +687,7 @@ const ContentManagement: React.FC = () => {
     const [itemsToDelete, setItemsToDelete] = useState<string[]>([]);
     
     const { addToast } = useToast();
-    const { currentItem, playbackState, isPreviewing, playPreview } = usePlayer();
+    const { currentItem, playbackState, isPreviewing, playPreview, addToQueue } = usePlayer();
 
     const isPlaying = playbackState === 'playing';
     
@@ -773,8 +777,18 @@ const ContentManagement: React.FC = () => {
         if (e.target) e.target.value = '';
     };
 
-    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => setSelectedItems(e.target.checked ? processedContent.map(i => i.id) : []);
-    const handleSelectItem = (id: string, checked: boolean) => setSelectedItems(checked ? [...selectedItems, id] : selectedItems.filter(i => i !== id));
+    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newSelection = e.target.checked ? processedContent.map(i => i.id) : [];
+        setSelectedItems(newSelection);
+        onSelectionChange(newSelection);
+    };
+
+    const handleSelectItem = (id: string, checked: boolean) => {
+        const newSelection = checked ? [...selectedItems, id] : selectedItems.filter(i => i !== id);
+        setSelectedItems(newSelection);
+        onSelectionChange(newSelection);
+    };
+
     const isAllSelected = processedContent.length > 0 && selectedItems.length === processedContent.length;
     const selectedContent = useMemo(() => contentItems.filter(item => selectedItems.includes(item.id)), [contentItems, selectedItems]);
     const areAllSelectedItemsSameType = useMemo(() => {
@@ -825,7 +839,9 @@ const ContentManagement: React.FC = () => {
     const confirmDelete = () => {
         if (itemsToDelete.length > 0) {
             deleteContentItems(itemsToDelete);
-            setSelectedItems(prev => prev.filter(id => !itemsToDelete.includes(id)));
+            const newSelection = selectedItems.filter(id => !itemsToDelete.includes(id));
+            setSelectedItems(newSelection);
+            onSelectionChange(newSelection);
             addToast(`${itemsToDelete.length} item(s) deleted.`, 'info');
         }
         setIsDeleteModalOpen(false);
@@ -834,7 +850,9 @@ const ContentManagement: React.FC = () => {
 
     const handleBulkSave = (changes: Partial<ContentItem>) => {
         bulkUpdateContentItems(selectedItems, changes);
-        setIsBulkEditModalOpen(false); setSelectedItems([]);
+        setIsBulkEditModalOpen(false); 
+        setSelectedItems([]); 
+        onSelectionChange([]);
     };
     
     const handleOpenPlaylistModal = (item: ContentItem) => { setCurrentItemForPlaylist(item); setIsPlaylistModalOpen(true); };
@@ -850,6 +868,7 @@ const ContentManagement: React.FC = () => {
         addContentItem(newItemData);
         setIsMergeModalOpen(false);
         setSelectedItems([]);
+        onSelectionChange([]);
     };
     
     const handleBulkItemsSave = (items: Partial<Omit<ContentItem, 'id' | 'date'>>[], files: File[]) => {
@@ -885,6 +904,11 @@ const ContentManagement: React.FC = () => {
             link.click();
             document.body.removeChild(link);
         }
+    };
+
+    const handleAddToQueue = (item: ContentItem) => {
+        addToQueue([item]);
+        addToast(`"${item.title}" added to the playout queue.`, 'success');
     };
 
     return (
@@ -954,7 +978,7 @@ const ContentManagement: React.FC = () => {
                             <button onClick={() => setIsBulkEditModalOpen(true)} disabled={!areAllSelectedItemsSameType} className="px-4 py-2 bg-yellow-500 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-600 disabled:bg-gray-400 disabled:cursor-not-allowed">Edit Selected</button>
                             {areAllSelectedItemsTextBased && <button onClick={() => setIsMergeModalOpen(true)} className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700">Merge & Summarize</button>}
                             <button onClick={handleBulkDelete} className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700">Delete Selected</button>
-                            <button onClick={() => setSelectedItems([])} className="px-4 py-2 bg-gray-500 text-white font-semibold rounded-lg shadow-md hover:bg-gray-600">Deselect All</button>
+                            <button onClick={() => { setSelectedItems([]); onSelectionChange([]); }} className="px-4 py-2 bg-gray-500 text-white font-semibold rounded-lg shadow-md hover:bg-gray-600">Deselect All</button>
                         </div>
                     </div>
                 ) : (
@@ -1008,7 +1032,8 @@ const ContentManagement: React.FC = () => {
                                         <td className="px-4 py-4"><div className="flex items-center space-x-3">
                                             {isPlayableContent(item) ? (<><button onClick={() => playPreview(item)} className="text-brand-blue hover:text-blue-700" title={isPreviewing && currentItem?.id === item.id && isPlaying ? 'Pause' : 'Preview'}>{isPreviewing && currentItem?.id === item.id && isPlaying ? <PauseCircleIcon /> : <PlayCircleIcon />}</button><button onClick={() => handleDownload(item)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Download Source"><DownloadIcon /></button></>) : (item.type === 'RSS Feed' && <button onClick={() => { setCurrentRssFeed(item as RssFeedContent); setIsRssModalOpen(true); }} className="text-blue-500 hover:text-blue-700" title="View Articles"><GlobeIcon /></button>)}
                                             <button onClick={() => handleEdit(item)} className="text-brand-blue hover:text-blue-700" title="Edit"><PencilIcon /></button>
-                                            <button onClick={() => handleOpenPlaylistModal(item)} className="text-green-500 hover:text-green-700" title="Add to Playlist"><PlaylistAddIcon /></button>
+                                            <button onClick={() => handleAddToQueue(item)} className="text-green-500 hover:text-green-700" title="Add to Playout Queue"><QueueAddIcon /></button>
+                                            <button onClick={() => handleOpenPlaylistModal(item)} className="text-purple-500 hover:text-purple-700" title="Add to Playlist"><PlaylistAddIcon /></button>
                                             <button onClick={() => handleDelete(item.id)} className="text-red-500 hover:text-red-700" title="Delete"><TrashIcon /></button>
                                         </div></td>
                                     </tr>

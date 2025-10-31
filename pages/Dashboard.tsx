@@ -1,12 +1,13 @@
 
+
 import React, { useState, useEffect } from 'react';
-import { RadioIcon, SparklesIcon, MusicIcon, DocumentTextIcon, ScheduleIcon, PlaylistIcon, DollarSignIcon } from '../components/icons';
+import { RadioIcon, SparklesIcon, MusicIcon, DocumentTextIcon, ScheduleIcon, PlaylistIcon, DollarSignIcon, LinkIcon } from '../components/icons';
 import StatCard from '../components/StatCard';
 import { vaultContent, VaultContentItem, mapVaultItemToAudioContent } from '../services/vaultContent';
 import * as db from '../services/db';
 import { generateWithRetry } from '../services/ai';
 import { useToast } from '../contexts/ToastContext';
-import { AudioContent, isPlayableContent, Playlist } from '../types';
+import { AudioContent, isPlayableContent, Playlist, StreamStatus } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useContent } from '../contexts/ContentContext';
@@ -14,7 +15,7 @@ import { useContent } from '../contexts/ContentContext';
 const Dashboard: React.FC = () => {
     const { stationSettings, saveStationSettings, currentUser } = useAuth();
     const { addToast } = useToast();
-    const { currentItem, playoutQueue, currentQueueIndex, isPreviewing } = usePlayer();
+    const { currentItem, playoutQueue, currentQueueIndex, isPreviewing, streamStatus } = usePlayer();
     const { contentItems, audioContentItems } = useContent();
 
     const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -128,14 +129,24 @@ const Dashboard: React.FC = () => {
     
     const totalContentCount = contentItems.length + audioContentItems.length;
 
+    const getStreamStatusInfo = (status: StreamStatus) => {
+        switch (status) {
+            case 'auto-dj': return { text: 'On Air (Auto DJ)', color: 'bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-300' };
+            case 'live-dj': return { text: 'On Air (Live DJ)', color: 'bg-red-100 dark:bg-red-900 text-red-500 dark:text-red-300' };
+            case 'failover': return { text: 'On Air (Failover)', color: 'bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-300' };
+            default: return { text: 'Offline', color: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300' };
+        }
+    };
+    const streamStatusInfo = getStreamStatusInfo(streamStatus);
+
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
-          title="Station Status" 
-          value={nowPlayingItem ? 'On Air' : 'Offline'}
+          title="Cloud Stream Status" 
+          value={streamStatusInfo.text}
           icon={<RadioIcon />} 
-          statusColor={nowPlayingItem ? "bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-300" : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"}
+          statusColor={streamStatusInfo.color}
         />
         <StatCard 
           title="Total Content" 
@@ -188,34 +199,36 @@ const Dashboard: React.FC = () => {
                 <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
                     <p className="font-semibold text-gray-700 dark:text-gray-300">Station is Offline</p>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Go to the Schedule page to start your broadcast.</p>
-                     <button onClick={() => { (document.querySelector('a[data-page="schedule"]') as HTMLElement)?.click(); }} className="mt-4 px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none flex items-center justify-center space-x-2 mx-auto">
+                     <button onClick={() => { (document.querySelector('a[href="#"]') as HTMLElement)?.click(); /* A bit of a hack to navigate */ }} className="mt-4 px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none flex items-center justify-center space-x-2 mx-auto">
                         <ScheduleIcon />
                         <span>Go to Schedule</span>
                     </button>
                 </div>
             )}
         </div>
-         <div className="md:col-span-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-            <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Station Vibe</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                {currentUser?.role === 'Admin'
-                    ? "Set the mood for your AI DJ. This will change the tone of generated announcements in real-time."
-                    : "The current station mood set by an admin. This affects the tone of AI announcements."
-                }
-            </p>
-            <select 
-                value={stationSettings.vibe || 'Default'} 
-                onChange={handleVibeChange} 
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-100 dark:disabled:bg-gray-700/50 disabled:cursor-not-allowed"
-                disabled={currentUser?.role !== 'Admin'}
-            >
-                <option>Default</option>
-                <option>Upbeat</option>
-                <option>Chill</option>
-                <option>Playful</option>
-                <option>Professional</option>
-            </select>
-            <div className="mt-6">
+         <div className="md:col-span-1 space-y-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Station Vibe</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                    {currentUser?.role === 'Admin'
+                        ? "Set the mood for your AI DJ. This will change the tone of generated announcements in real-time."
+                        : "The current station mood set by an admin. This affects the tone of AI announcements."
+                    }
+                </p>
+                <select 
+                    value={stationSettings.vibe || 'Default'} 
+                    onChange={handleVibeChange} 
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-100 dark:disabled:bg-gray-700/50 disabled:cursor-not-allowed"
+                    disabled={currentUser?.role !== 'Admin'}
+                >
+                    <option>Default</option>
+                    <option>Upbeat</option>
+                    <option>Chill</option>
+                    <option>Playful</option>
+                    <option>Professional</option>
+                </select>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
                  <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Clock</h3>
                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 flex flex-col items-center justify-center">
                     <p className="text-3xl font-bold text-gray-800 dark:text-white">
@@ -228,30 +241,44 @@ const Dashboard: React.FC = () => {
             </div>
         </div>
     </div>
-
-
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-        <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-800 dark:text-white">
-            <SparklesIcon className="h-5 w-5 mr-2 text-purple-500" />
-            AI Recommendations from the Vault
-        </h3>
-        {isLoadingRecs ? (
-            <p className="text-gray-500 dark:text-gray-400">Analyzing your library to find recommendations...</p>
-        ) : recommendations.length > 0 ? (
-            <div className="space-y-3">
-                {recommendations.map(item => (
-                    <div key={item.id} className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg flex justify-between items-center">
-                        <div>
-                            <p className="font-semibold text-gray-800 dark:text-white">{item.filename}</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">{item.genre}</p>
+     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-800 dark:text-white">
+                <LinkIcon />
+                <span className="ml-2">Public Listen URL</span>
+            </h3>
+            {stationSettings.streamUrl ? (
+                 <div className="flex items-center space-x-2">
+                    <input type="text" readOnly value={stationSettings.streamUrl} className="flex-grow px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700/50 text-sm" />
+                    <button onClick={() => navigator.clipboard.writeText(stationSettings.streamUrl || '')} className="px-4 py-1.5 text-sm bg-gray-200 dark:bg-gray-600 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500">Copy</button>
+                </div>
+            ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">Set your public stream URL in Station Settings to share with listeners.</p>
+            )}
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-800 dark:text-white">
+                <SparklesIcon className="h-5 w-5 mr-2 text-purple-500" />
+                AI Recommendations from the Vault
+            </h3>
+            {isLoadingRecs ? (
+                <p className="text-gray-500 dark:text-gray-400">Analyzing your library to find recommendations...</p>
+            ) : recommendations.length > 0 ? (
+                <div className="space-y-3">
+                    {recommendations.map(item => (
+                        <div key={item.id} className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg flex justify-between items-center">
+                            <div>
+                                <p className="font-semibold text-gray-800 dark:text-white">{item.filename}</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">{item.genre}</p>
+                            </div>
+                            <button onClick={() => handleImport(item)} className="px-3 py-1 text-sm bg-brand-blue text-white rounded-md hover:bg-blue-700">Add to Library</button>
                         </div>
-                        <button onClick={() => handleImport(item)} className="px-3 py-1 text-sm bg-brand-blue text-white rounded-md hover:bg-blue-700">Add to Library</button>
-                    </div>
-                ))}
-            </div>
-        ) : (
-            <p className="text-gray-500 dark:text-gray-400">Not enough data to generate recommendations.</p>
-        )}
+                    ))}
+                </div>
+            ) : (
+                <p className="text-gray-500 dark:text-gray-400">Not enough data to generate recommendations.</p>
+            )}
+        </div>
     </div>
 
     </div>

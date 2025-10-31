@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect, useRef } from 'react';
-import { ContentItem, isPlayableContent, AudioContent, MusicContent, AdContent, CustomAudioContent, Station, Campaign, Clockwheel, Webhook, User } from '../types';
+// FIX: Import StreamStatus to use it in the context.
+import { ContentItem, isPlayableContent, AudioContent, MusicContent, AdContent, CustomAudioContent, Station, Campaign, Clockwheel, Webhook, User, StreamStatus } from '../types';
 import { useContent } from './ContentContext';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { generateWithRetry, handleAiError } from '../services/ai';
@@ -33,6 +34,8 @@ interface PlayerContextType {
     announcementGenerationProgress: number;
     playoutHistory: PlayoutHistoryItem[];
     isAiProgramDirectorActive: boolean;
+    // FIX: Add streamStatus to the context type for Dashboard.tsx
+    streamStatus: StreamStatus;
     
     setIsAiProgramDirectorActive: (isActive: boolean) => void;
     loadSchedule: (items: ContentItem[]) => void;
@@ -53,6 +56,9 @@ interface PlayerContextType {
     shuffleQueue: () => void;
     updateQueueItem: (index: number, item: ContentItem) => void;
     handleListenerLike: (likedItem: ContentItem) => void;
+    // FIX: Add start/end live broadcast functions for LiveDJModal.tsx
+    startLiveDJBroadcast: () => void;
+    endLiveDJBroadcast: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -238,6 +244,9 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [previewItem, setPreviewItem] = useState<ContentItem | null>(null);
     const [savedPlayoutState, setSavedPlayoutState] = useState<SavedPlayoutState | null>(null);
     const [isAiProgramDirectorActive, setIsAiProgramDirectorActive] = useState(false);
+    // FIX: Add state for stream status and live DJ mode.
+    const [streamStatus, setStreamStatus] = useState<StreamStatus>('offline');
+    const wasPlayingBeforeLiveRef = useRef(false);
 
     const [isGeneratingAnnouncements, setIsGeneratingAnnouncements] = useState(false);
     const [announcementGenerationProgress, setAnnouncementGenerationProgress] = useState(0);
@@ -725,9 +734,13 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (items.length > 0) {
             setCurrentQueueIndex(0);
             setPlaybackState('playing');
+            // FIX: Set stream status when starting broadcast
+            setStreamStatus('auto-dj');
         } else {
             setCurrentQueueIndex(-1);
             setPlaybackState('stopped');
+            // FIX: Set stream status when stopping broadcast
+            setStreamStatus('offline');
     
             audioRefs.forEach(ref => {
                 if (ref.current) {
@@ -887,7 +900,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
     
-    const togglePlayPause = () => {
+    const togglePlayPause = useCallback(() => {
        if (!currentItem) return;
        const player = getActivePlayer();
        const isArticle = (currentItem.type === 'Article' || currentItem.type === 'RSS Feed') && currentItem.useAiAnnouncer;
@@ -919,7 +932,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                  player?.play().catch(e => console.error("Audio play failed on resume", e));
             }
        }
-    };
+    }, [currentItem, playbackState, currentTime, playArticleTTS, getActivePlayer]);
 
     const seek = (time: number) => {
         if (!currentItem) return;
@@ -1066,13 +1079,37 @@ Return your choice ONLY as a JSON object with a single key "id". Example: {"id":
         }
     }, [isAiProgramDirectorActive, currentUser, deductCredits, contentItems, audioContentItems, addToast, currentQueueIndex]);
 
+    const startLiveDJBroadcast = useCallback(() => {
+        if (playbackState === 'playing') {
+            wasPlayingBeforeLiveRef.current = true;
+            togglePlayPause();
+        } else {
+            wasPlayingBeforeLiveRef.current = false;
+        }
+        setStreamStatus('live-dj');
+        addToast("Live DJ broadcast has started! Auto DJ is paused.", "info");
+    }, [playbackState, togglePlayPause, addToast]);
+
+    const endLiveDJBroadcast = useCallback(() => {
+        // If the queue has items, it's auto-dj, otherwise it's offline.
+        setStreamStatus(playoutQueue.length > 0 && currentQueueIndex !== -1 ? 'auto-dj' : 'offline');
+        if (wasPlayingBeforeLiveRef.current && playbackState !== 'playing') {
+            togglePlayPause();
+            addToast("Resuming Auto DJ.", "info");
+        } else {
+            addToast("Live DJ has disconnected.", "info");
+        }
+        wasPlayingBeforeLiveRef.current = false;
+    }, [playbackState, togglePlayPause, addToast, playoutQueue.length, currentQueueIndex]);
+
     const value = { 
         currentItem, playbackState, isPreviewing, currentTime, duration, volume, isMuted,
         playoutQueue, currentQueueIndex, albumArtUrl, loadSchedule, playPreview, returnToPlayout, togglePlayPause,
         playNext, playPrevious, seek, beginSeek, endSeek, setVolume, setIsMuted, reorderQueue,
         removeFromQueue, addToQueue, shuffleQueue, updateQueueItem,
         isGeneratingAnnouncements, announcementGenerationProgress, generateScheduleAndAnnouncements,
-        playoutHistory, isAiProgramDirectorActive, setIsAiProgramDirectorActive, handleListenerLike
+        playoutHistory, isAiProgramDirectorActive, setIsAiProgramDirectorActive, handleListenerLike,
+        streamStatus, startLiveDJBroadcast, endLiveDJBroadcast
     };
 
     return (

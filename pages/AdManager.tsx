@@ -39,7 +39,12 @@ const getAudioDuration = (file: File): Promise<string> => {
     });
 };
 
-const AdManager: React.FC = () => {
+interface AdManagerProps {
+    actionTrigger?: string;
+    clearActionTrigger?: () => void;
+}
+
+const AdManager: React.FC<AdManagerProps> = ({ actionTrigger, clearActionTrigger }) => {
     const { currentUser } = useAuth();
     const { contentItems, addContentItem } = useContent();
     const { addToast } = useToast();
@@ -66,7 +71,7 @@ const AdManager: React.FC = () => {
         return contentItems.filter((item): item is AdContent => item.type === 'Ad');
     }, [contentItems]);
     
-    const handleAddNewCampaign = () => {
+    const handleAddNewCampaign = useCallback(() => {
         setEditingCampaign({
             name: '',
             sponsor: '',
@@ -78,7 +83,14 @@ const AdManager: React.FC = () => {
             creativeIds: []
         });
         setIsCampaignModalOpen(true);
-    };
+    }, []);
+
+    useEffect(() => {
+        if (actionTrigger === 'newCampaign' && clearActionTrigger) {
+            handleAddNewCampaign();
+            clearActionTrigger();
+        }
+    }, [actionTrigger, clearActionTrigger, handleAddNewCampaign]);
 
     const handleEditCampaign = (campaign: Campaign) => {
         setEditingCampaign({
