@@ -1,3 +1,4 @@
+
 import React, { useState, ChangeEvent, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MusicIcon, PencilIcon, TrashIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, ExclamationCircleIcon, QueueAddIcon } from '../components/icons';
 import type { AudioContent as AudioContentType, Playlist, ContentItem, MusicContent, AdContent, CustomAudioContent, ClonedVoice, User } from '../types';
@@ -32,9 +33,8 @@ const getAudioDuration = (file: File): Promise<string> => {
             const minutes = Math.floor(duration / 60);
             const seconds = duration % 60;
             resolve(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-            URL.revokeObjectURL(audio.src);
         };
-        audio.onerror = () => { resolve('0:00'); URL.revokeObjectURL(audio.src); };
+        audio.onerror = () => { resolve('0:00'); };
     });
 };
 

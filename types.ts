@@ -1,6 +1,7 @@
 
 
 
+
 export interface Station {
   name: string;
   description: string;
@@ -106,11 +107,16 @@ export interface RssFeedContent extends BaseContentItem {
     content?: string;
 }
 
-export type ContentItem = MusicContent | ArticleContent | AdContent | CustomAudioContent | RssFeedContent;
+export interface RelayStreamContent extends BaseContentItem {
+    type: 'Relay Stream';
+    url: string;
+}
+
+export type ContentItem = MusicContent | ArticleContent | AdContent | CustomAudioContent | RssFeedContent | RelayStreamContent;
 
 // Type guard to check if a content item is playable audio with a valid URL.
-export function isPlayableContent(item: ContentItem): item is (MusicContent | AdContent | CustomAudioContent) & { url: string } {
-    if (item.type === 'Music' || item.type === 'Ad' || item.type === 'Custom Audio') {
+export function isPlayableContent(item: ContentItem): item is (MusicContent | AdContent | CustomAudioContent | RelayStreamContent) & { url: string } {
+    if (item.type === 'Music' || item.type === 'Ad' || item.type === 'Custom Audio' || item.type === 'Relay Stream') {
         return typeof item.url === 'string' && item.url.trim() !== '';
     }
     return false;
@@ -210,11 +216,11 @@ export interface RssFeedSettings {
   outroText: string;
   stringsToReplace: { from: string; to: string }[];
   schedules: string[];
+  targetPlaylistId?: string;
 }
 
 // Add Clockwheel types for the Show Designer feature.
-// FIX: Add 'Article' to ClockwheelBlockType to support talk radio formats.
-export type ClockwheelBlockType = 'Music' | 'Ad' | 'Jingle' | 'News' | 'Weather' | 'StationID' | 'Promo' | 'Article' | 'Thematic';
+export type ClockwheelBlockType = 'Music' | 'Ad' | 'Jingle' | 'News' | 'Weather' | 'StationID' | 'Promo' | 'Article' | 'Thematic' | 'Relay Stream';
 
 export interface ClockwheelBlock {
     type: ClockwheelBlockType;

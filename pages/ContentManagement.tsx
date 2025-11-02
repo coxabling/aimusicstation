@@ -1,9 +1,10 @@
+
 import React, { useState, useMemo, ChangeEvent, useEffect, useCallback } from 'react';
 import { MusicIcon, PencilIcon, TrashIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, SparklesIcon, GlobeIcon, ExclamationCircleIcon, QueueAddIcon } from '../components/icons';
 import Modal from '../components/Modal';
 import InputField from '../components/InputField';
 import ToggleSwitch from '../components/ToggleSwitch';
-import type { ContentItem, MusicContent, ArticleContent, AdContent, CustomAudioContent, RssFeedContent, Playlist, ClonedVoice } from '../types';
+import type { ContentItem, MusicContent, ArticleContent, AdContent, CustomAudioContent, RssFeedContent, Playlist, ClonedVoice, RelayStreamContent } from '../types';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useContent } from '../contexts/ContentContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -52,11 +53,9 @@ const getAudioDuration = (file: File): Promise<string> => {
             const minutes = Math.floor(duration / 60);
             const seconds = duration % 60;
             resolve(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-            URL.revokeObjectURL(audio.src);
         };
         audio.onerror = () => {
             resolve('0:00'); // Resolve with default on error
-            URL.revokeObjectURL(audio.src);
         };
     });
 };
@@ -78,7 +77,14 @@ const ContentForm: React.FC<{ item: Partial<ContentItem>; onSave: (item: Partial
             const newType = value as ContentItem['type'];
             const baseState: Partial<ContentItem> = { id: currentItem.id, title: currentItem.title || '' };
             if (newType !== 'Music' && newType !== 'Custom Audio' && newType !== 'Ad') setFile(null);
-            const typeDefaults = { 'Music': { type: 'Music' as const, artist: '' }, 'Article': { type: 'Article' as const, content: '' }, 'Ad': { type: 'Ad' as const }, 'Custom Audio': { type: 'Custom Audio' as const, artist: '' }, 'RSS Feed': { type: 'RSS Feed' as const, source: '' }, };
+            const typeDefaults: Record<ContentItem['type'], Partial<ContentItem>> = { 
+                'Music': { type: 'Music' as const, artist: '' }, 
+                'Article': { type: 'Article' as const, content: '' }, 
+                'Ad': { type: 'Ad' as const }, 
+                'Custom Audio': { type: 'Custom Audio' as const, artist: '' }, 
+                'RSS Feed': { type: 'RSS Feed' as const, source: '' },
+                'Relay Stream': { type: 'Relay Stream' as const, url: '' },
+            };
             setCurrentItem({ ...baseState, ...typeDefaults[newType], useAiAnnouncer: false, announcementWithBackgroundMusic: false, announcerVoice: 'AI-David' });
         } else {
              setCurrentItem(prev => ({ ...prev, [name]: value }));
@@ -162,7 +168,7 @@ Keep the announcement under 45 seconds when read aloud.`;
             <div>
                 <label htmlFor="type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content Type</label>
                 <select id="type" name="type" value={type} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-200 dark:disabled:bg-gray-600" disabled={isUploading}>
-                    <option>Music</option><option>Article</option><option>Ad</option><option>Custom Audio</option><option>RSS Feed</option>
+                    <option>Music</option><option>Article</option><option>Ad</option><option>Custom Audio</option><option>RSS Feed</option><option>Relay Stream</option>
                 </select>
             </div>
             {(type === 'Music' || type === 'Custom Audio' || type === 'Ad') && (
@@ -189,12 +195,13 @@ Keep the announcement under 45 seconds when read aloud.`;
                 </div>
             )}
             <InputField label="Title" name="title" value={currentItem.title || ''} onChange={handleChange} placeholder="Content Title" disabled={isUploading} />
-            {(type === 'Music' || type === 'Custom Audio' || type === 'Ad') && (
+            {(type === 'Music' || type === 'Custom Audio' || type === 'Ad' || type === 'Relay Stream') && (
                 <InputField label="Duration" name="duration" value={currentItem.duration || ''} onChange={handleChange} placeholder="e.g., 3:45" disabled={isUploading}/>
             )}
             {(type === 'Music' || type === 'Custom Audio') && <InputField label="Artist" name="artist" value={(currentItem as MusicContent | CustomAudioContent).artist || ''} onChange={handleChange} placeholder="Artist Name" disabled={isUploading} />}
             {type === 'Music' && <InputField label="Genre" name="genre" value={(currentItem as MusicContent).genre || ''} onChange={handleChange} placeholder="Music Genre" disabled={isUploading} />}
             {type === 'RSS Feed' && <InputField label="Source URL" name="source" value={(currentItem as RssFeedContent).source || ''} onChange={handleChange} placeholder="https://..." disabled={isUploading} />}
+            {type === 'Relay Stream' && <InputField label="Stream URL" name="url" value={(currentItem as RelayStreamContent).url || ''} onChange={handleChange} placeholder="https://your-stream.com/live" disabled={isUploading} />}
             
             {type === 'Article' && (
                 <InputField label="Article Body" name="content" value={(currentItem as ArticleContent).content || ''} onChange={handleChange} placeholder="Write your article here, or generate one in the AI Content Studio." isTextarea disabled={isUploading} />
@@ -844,7 +851,7 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     }, [selectedContent]);
     const areAllSelectedItemsPlayable = useMemo(() => {
         if (selectedContent.length === 0) return false;
-        const playableTypes: ContentItem['type'][] = ['Music', 'Ad', 'Custom Audio'];
+        const playableTypes: ContentItem['type'][] = ['Music', 'Ad', 'Custom Audio', 'Relay Stream'];
         return selectedContent.every(item => playableTypes.includes(item.type));
     }, [selectedContent]);
 
@@ -943,7 +950,9 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
         link.style.display = 'none';
         const filename = item.title || 'download';
         
-        if (item.file && item.file instanceof File) {
+        // FIX: Check if the 'file' property exists on the item before accessing it, as RelayStreamContent does not have this property.
+        // This resolves the TypeScript error. Also, prevent attempts to download a live Relay Stream URL.
+        if ('file' in item && item.file && item.file instanceof File) {
             const blobUrl = URL.createObjectURL(item.file);
             link.href = blobUrl;
             link.download = item.file.name || filename;
@@ -952,7 +961,7 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
             document.body.removeChild(link);
             URL.revokeObjectURL(blobUrl);
         } 
-        else if (item.url) {
+        else if (item.url && item.type !== 'Relay Stream') {
             link.href = item.url;
             link.download = filename;
             link.target = '_blank'; 
@@ -1069,7 +1078,7 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
                     </div>
                     <div>
                         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700">
-                            <option>All</option><option>Music</option><option>Article</option><option>Ad</option><option>Custom Audio</option><option>RSS Feed</option>
+                            <option>All</option><option>Music</option><option>Article</option><option>Ad</option><option>Custom Audio</option><option>RSS Feed</option><option>Relay Stream</option>
                         </select>
                     </div>
                 </div>

@@ -10,7 +10,7 @@ interface ContentContextType {
     loadContent: () => Promise<void>;
     addContentItem: (item: Partial<ContentItem>, file?: File) => Promise<void>;
     bulkAddContentItems: (items: Partial<Omit<ContentItem, 'id' | 'date' | 'tenantId'>>[], files: File[]) => Promise<void>;
-    bulkAddTextContentItems: (items: Partial<Omit<ContentItem, 'id' | 'date' | 'tenantId'>>[]) => Promise<void>;
+    bulkAddTextContentItems: (items: Partial<Omit<ContentItem, 'id' | 'date' | 'tenantId'>>[]) => Promise<ContentItem[]>;
     updateContentItem: (item: ContentItem) => Promise<void>;
     deleteContentItems: (ids: string[]) => Promise<void>;
     bulkUpdateContentItems: (ids: string[], changes: Partial<Omit<ContentItem, 'id'>>) => Promise<void>;
@@ -97,8 +97,8 @@ export const ContentProvider: React.FC<{ children: ReactNode }> = ({ children })
         await loadContent();
     };
     
-    const bulkAddTextContentItems = async (itemsData: Partial<Omit<ContentItem, 'id' | 'date' | 'tenantId'>>[]) => {
-        if (!currentUser) return;
+    const bulkAddTextContentItems = async (itemsData: Partial<Omit<ContentItem, 'id' | 'date' | 'tenantId'>>[]): Promise<ContentItem[]> => {
+        if (!currentUser) return [];
         const newItems: ContentItem[] = itemsData.map((itemData, index) => ({
             id: `${new Date().toISOString()}-${index}`,
             tenantId: currentUser.tenantId,
@@ -109,6 +109,7 @@ export const ContentProvider: React.FC<{ children: ReactNode }> = ({ children })
     
         await db.bulkSaveContentItems(newItems);
         await loadContent(); // Only reload once
+        return newItems;
     };
 
     const updateContentItem = async (updatedItemData: ContentItem) => {

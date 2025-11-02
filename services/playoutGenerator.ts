@@ -1,4 +1,3 @@
-// FIX: Import ClockwheelBlockType to resolve type errors.
 import type { ContentItem, Campaign, Clockwheel, ClockwheelBlock, Station, ClockwheelBlockType } from '../types';
 import { isPlayableContent } from '../types';
 import { generateWithRetry } from './ai';
@@ -21,6 +20,7 @@ const mapBlockToContentType = (block: ClockwheelBlockType): ContentItem['type'][
         case 'Article': case 'News': case 'Weather': return ['Article', 'RSS Feed'];
         case 'Ad': return ['Ad'];
         case 'Jingle': case 'StationID': case 'Promo': return ['Custom Audio'];
+        case 'Relay Stream': return ['Relay Stream'];
         default: return [];
     }
 }
@@ -57,7 +57,7 @@ export const generateSchedule = (
             
             const shuffledPool = [...pool].sort(() => 0.5 - Math.random());
             for (const item of shuffledPool) {
-                const isAudio = ['Music', 'Ad', 'Custom Audio'].includes(item.type);
+                const isAudio = ['Music', 'Ad', 'Custom Audio', 'Relay Stream'].includes(item.type);
                 if ((isAudio && isPlayableContent(item)) || !isAudio) {
                     if (schedule.length > 0 && item.id === schedule[schedule.length - 1].originalId && pool.length > 1) {
                         continue;
@@ -153,13 +153,16 @@ export const generateScheduleFromClockwheel = async (
                 pool = [...(availableContentByType['Article'] || []), ...(availableContentByType['RSS Feed'] || [])];
                 // You could filter by title containing "News" or "Weather"
                 break;
+            case 'Relay Stream':
+                pool = availableContentByType['Relay Stream'] || [];
+                break;
         }
 
         if (pool.length === 0) return null;
 
         const shuffledPool = [...pool].sort(() => 0.5 - Math.random());
         for (const item of shuffledPool) {
-            const isAudio = ['Music', 'Ad', 'Custom Audio'].includes(item.type);
+            const isAudio = ['Music', 'Ad', 'Custom Audio', 'Relay Stream'].includes(item.type);
             if ((isAudio && isPlayableContent(item)) || !isAudio) {
                 if (schedule.length > 0 && item.originalId === schedule[schedule.length - 1].originalId && pool.length > 1) {
                     continue;

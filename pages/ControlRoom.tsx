@@ -57,25 +57,27 @@ function pcmToWav(pcmData: Uint8Array, sampleRate: number, numChannels: number, 
 function getAnnouncerVoiceName(voice: string): string {
     switch (voice) { case 'AI-David': return 'Puck'; case 'AI-Sarah': return 'Kore'; case 'AI-Ayo (African Male)': return 'Fenrir'; case 'AI-Zola (African Female)': return 'Charon'; default: return 'Zephyr'; }
 }
-const getDuration = (url: string): Promise<string> => new Promise(resolve => {
-    const audio = document.createElement('audio');
-    audio.preload = 'metadata';
-    audio.onloadedmetadata = () => {
-        const duration = audio.duration;
-        resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
-    };
-    audio.onerror = () => {
-        resolve('0:20'); // fallback
-    }
-    audio.src = url;
-});
+function getDuration(url: string): Promise<string> {
+    return new Promise(resolve => {
+        const audio = document.createElement('audio');
+        audio.preload = 'metadata';
+        audio.onloadedmetadata = () => {
+            const duration = audio.duration;
+            resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
+        };
+        audio.onerror = () => {
+            resolve('0:20'); // fallback
+        }
+        audio.src = url;
+    });
+}
 
 
 /**
  * Converts an AudioContent object into a standard, playable ContentItem object.
  * This ensures consistency when adding items from different libraries to the playout queue.
  */
-const mapAudioToContentItem = (audio: AudioContent, currentUser: User): ContentItem | null => {
+function mapAudioToContentItem(audio: AudioContent, currentUser: User): ContentItem | null {
     if (audio.type === 'Music') {
         return {
             id: audio.id, tenantId: currentUser.tenantId, title: audio.filename, type: 'Music', artist: audio.artist || 'Unknown',
@@ -91,7 +93,7 @@ const ControlRoom: React.FC = () => {
     const { currentUser, deductCredits } = useAuth();
     const { addToast } = useToast();
     const { addToQueue } = usePlayer();
-    const { contentItems, audioContentItems, addContentItem } = useContent();
+    const { contentItems, audioContentItems, addContentItem, bulkAddTextContentItems } = useContent();
     const [allItems, setAllItems] = useState<UnifiedItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState<ControlRoomItemType | 'All'>('All');
@@ -126,11 +128,43 @@ const ControlRoom: React.FC = () => {
             } catch (error) { console.error(`Failed to fetch RSS feed: ${feed.name}`, error); }
         }
 
+        const feedsToAutoPublish = rssFeeds.filter(f => !f.approveBeforeAiring && f.published);
+        let totalNewArticles = 0;
+        
+        for (const feed of feedsToAutoPublish) {
+            try {
+                const articles = await fetchRssFeed(feed.url);
+                const newArticlesFromFeed = articles.filter(a => !existingArticleTitles.has(a.title));
+                
+                if (newArticlesFromFeed.length > 0) {
+                    const newItemsData = newArticlesFromFeed.map(article => ({
+                        type: 'Article' as const,
+                        title: article.title,
+                        content: article.content,
+                        source: feed.name,
+                        useAiAnnouncer: true,
+                    }));
+                    
+                    const createdContentItems = await bulkAddTextContentItems(newItemsData);
+                    totalNewArticles += createdContentItems.length;
+                    
+                    if (feed.targetPlaylistId && createdContentItems.length > 0) {
+                        const articleIds = createdContentItems.map(item => item.id);
+                        await db.addTracksToPlaylists(articleIds, [feed.targetPlaylistId], currentUser.tenantId);
+                    }
+                }
+            } catch (error) { console.error(`Failed to auto-publish RSS feed: ${feed.name}`, error); }
+        }
+
+        if (totalNewArticles > 0) {
+            addToast(`${totalNewArticles} new article(s) auto-published from RSS feeds.`, 'info');
+        }
+
         const combined = [...submissionItems, ...socialPostItems, ...rssItems];
         combined.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
         setAllItems(combined);
         setIsLoading(false);
-    }, [currentUser, contentItems]);
+    }, [currentUser, contentItems, bulkAddTextContentItems, addToast]);
 
     useEffect(() => {
         fetchData();

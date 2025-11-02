@@ -53,14 +53,22 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage, sidebarOpe
       <div className={`fixed inset-0 z-20 bg-black bg-opacity-50 transition-opacity lg:hidden ${sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setSidebarOpen(false)}></div>
       <aside className={`fixed lg:static inset-y-0 left-0 z-30 w-64 bg-gray-900 text-white h-full flex flex-col transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 transition-transform duration-300 ease-in-out`}>
         <div className="p-5 border-b border-gray-700 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
+            <a
+                href="#"
+                onClick={(e) => {
+                    e.preventDefault();
+                    handleNavClick('dashboard');
+                }}
+                className="flex items-center space-x-3 transition-opacity hover:opacity-80"
+                title="Go to Dashboard"
+            >
                 {station.logo ? (
                     <img src={station.logo} alt={`${station.name} logo`} className="h-8 w-8 rounded-full object-cover" />
                 ) : (
                     <RadioIcon />
                 )}
                 <h1 className="text-xl font-bold tracking-wider">{station.name}</h1>
-            </div>
+            </a>
             <button className="lg:hidden" onClick={() => setSidebarOpen(false)}>
                 <XIcon />
             </button>

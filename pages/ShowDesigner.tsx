@@ -15,10 +15,9 @@ const blockTypeLabels: Record<ClockwheelBlockType, string> = {
     'Weather': 'Weather Report',
     'StationID': 'Station ID',
     'Promo': 'Promo',
-    // FIX: Add 'Article' to satisfy the ClockwheelBlockType.
     'Article': 'Article Segment',
-    // FIX: Add 'Thematic' to satisfy the ClockwheelBlockType.
     'Thematic': 'Thematic Block',
+    'Relay Stream': 'Relay Stream',
 };
 
 const ClockwheelForm: React.FC<{

@@ -49,6 +49,7 @@ const getEventColor = (type: ContentItem['type']) => {
         'Ad': 'bg-yellow-500 border-yellow-700',
         'Custom Audio': 'bg-indigo-500 border-indigo-700',
         'RSS Feed': 'bg-purple-500 border-purple-500',
+        'Relay Stream': 'bg-pink-500 border-pink-700',
     };
     return colors[type] || 'bg-gray-500 border-gray-700';
 }
@@ -352,7 +353,21 @@ const Schedule: React.FC = () => {
     }, [playoutQueue, currentQueueIndex, isPreviewing]);
 
     const getSecondaryInfo = (item: ContentItem) => {
-        switch(item.type) { case 'Music': case 'Custom Audio': return item.artist; case 'RSS Feed': return item.source; default: return item.type; }
+        switch(item.type) {
+            case 'Music': case 'Custom Audio': return item.artist;
+            case 'RSS Feed': return item.source;
+            case 'Relay Stream': return item.url;
+            default: return item.type;
+        }
+    };
+
+    const getIconForItem = (item: ContentItem) => {
+        switch (item.type) {
+            case 'Music': return <MusicIcon />;
+            case 'Article': case 'RSS Feed': return <DocumentTextIcon />;
+            case 'Relay Stream': return <RadioIcon />;
+            default: return <MusicIcon />;
+        }
     };
 
     return (
@@ -497,7 +512,7 @@ const Schedule: React.FC = () => {
                             <h3 className="text-lg font-semibold text-gray-600 dark:text-gray-300 mb-2">Now Playing</h3>
                             {nowPlayingItem ? (
                                 <div className="bg-blue-50 dark:bg-gray-700/50 rounded-lg p-4 flex items-center space-x-4 border-l-4 border-brand-blue">
-                                    <div className="text-brand-blue">{isPlayableContent(nowPlayingItem) ? <MusicIcon /> : <DocumentTextIcon />}</div>
+                                    <div className="text-brand-blue">{getIconForItem(nowPlayingItem)}</div>
                                     <div className="flex-grow">
                                         <p className="font-bold text-gray-800 dark:text-white">{nowPlayingItem.title}</p>
                                         <div className="flex items-center space-x-2">
@@ -534,7 +549,7 @@ const Schedule: React.FC = () => {
                                     >
                                         <div className="flex items-center space-x-3 truncate">
                                             <DragHandleIcon />
-                                            <div className="flex-shrink-0 text-gray-500">{isPlayableContent(item) ? <MusicIcon /> : <DocumentTextIcon />}</div>
+                                            <div className="flex-shrink-0 text-gray-500">{getIconForItem(item)}</div>
                                             <div className="truncate">
                                                 <p className="font-medium text-gray-700 dark:text-gray-200 truncate">{item.title}</p>
                                                 <div className="flex items-center space-x-2">

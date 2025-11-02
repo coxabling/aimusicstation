@@ -143,7 +143,7 @@ const Integrations: React.FC = () => {
     };
 
     const embedCode = `<iframe 
-  src="/widget.html" 
+  src="https://aimusicstation.live/widget.html" 
   width="100%" 
   height="520" 
   frameborder="0"

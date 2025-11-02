@@ -1,6 +1,7 @@
 
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { RssFeedSettings, ClonedVoice } from '../types';
+import { RssFeedSettings, ClonedVoice, Playlist } from '../types';
 import InputField from '../components/InputField';
 import ToggleSwitch from '../components/ToggleSwitch';
 import Slider from '../components/Slider';
@@ -25,7 +26,8 @@ const RssFeedForm: React.FC<{
     onSave: (settings: RssFeedSettings) => void;
     onCancel: () => void;
     clonedVoices: ClonedVoice[];
-}> = ({ initialSettings, onSave, onCancel, clonedVoices }) => {
+    playlists: Playlist[];
+}> = ({ initialSettings, onSave, onCancel, clonedVoices, playlists }) => {
     const { currentUser } = useAuth();
     const [feedSettings, setFeedSettings] = useState<Partial<RssFeedSettings>>(initialSettings);
 
@@ -88,7 +90,8 @@ const RssFeedForm: React.FC<{
             ignoreNegativeSentiment: feedSettings.ignoreNegativeSentiment ?? false, ignoreByKeywords: feedSettings.ignoreByKeywords ?? false,
             keywordsToIgnore: feedSettings.keywordsToIgnore ?? [''], defaultFallbackMessage: feedSettings.defaultFallbackMessage ?? '', introText: feedSettings.introText ?? '',
             outroText: feedSettings.outroText ?? '', stringsToReplace: feedSettings.stringsToReplace ?? [{ from: '', to: '' }],
-            schedules: feedSettings.schedules ?? []
+            schedules: feedSettings.schedules ?? [],
+            targetPlaylistId: feedSettings.targetPlaylistId || undefined,
         };
         onSave(completeSettings);
     };
@@ -145,6 +148,24 @@ const RssFeedForm: React.FC<{
                     </div>
                 </div>
             </Section>
+            <Section title="Automation Actions">
+                <div>
+                    <label htmlFor="targetPlaylistId" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Add new articles to playlist</label>
+                    <select 
+                        id="targetPlaylistId"
+                        name="targetPlaylistId"
+                        value={feedSettings.targetPlaylistId || ''}
+                        onChange={handleChange}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700"
+                    >
+                        <option value="">-- Do not add to a playlist --</option>
+                        {playlists.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                    </select>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">If selected, newly parsed articles from this feed will be automatically added to the specified playlist.</p>
+                </div>
+            </Section>
             {/* Other sections omitted for brevity but would be included in a real component */}
              <div className="flex justify-end pt-4 space-x-3">
                 <button type="button" onClick={onCancel} className="px-6 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300">Cancel</button>
@@ -163,16 +184,19 @@ const RssAutomation: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingFeed, setEditingFeed] = useState<Partial<RssFeedSettings> | null>(null);
     const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>([]);
+    const [playlists, setPlaylists] = useState<Playlist[]>([]);
 
     const loadFeeds = useCallback(async () => {
         if (!currentUser) return;
         setIsLoading(true);
-        const [feedsFromDb, voicesFromDb] = await Promise.all([
+        const [feedsFromDb, voicesFromDb, playlistsFromDb] = await Promise.all([
             db.getAllRssFeedSettings(currentUser.tenantId),
-            db.getAllClonedVoices(currentUser.tenantId)
+            db.getAllClonedVoices(currentUser.tenantId),
+            db.getAllPlaylists(currentUser.tenantId)
         ]);
         setFeeds(feedsFromDb);
         setClonedVoices(voicesFromDb.filter(v => v.status === 'Ready'));
+        setPlaylists(playlistsFromDb);
         setIsLoading(false);
     }, [currentUser]);
 
@@ -221,6 +245,7 @@ const RssAutomation: React.FC = () => {
                         onSave={handleSave}
                         onCancel={() => setIsModalOpen(false)}
                         clonedVoices={clonedVoices}
+                        playlists={playlists}
                     />
                 )}
             </Modal>
