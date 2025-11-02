@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Campaign, AdContent } from '../types';
 import * as db from '../services/db';
@@ -21,6 +22,7 @@ const CampaignStatusBadge: React.FC<{ status: Campaign['status'] }> = ({ status 
     );
 };
 
+// FIX: Add getAudioDuration helper function needed by AdCreativeForm.
 const getAudioDuration = (file: File): Promise<string> => {
     return new Promise((resolve) => {
         const audio = document.createElement('audio');
@@ -43,6 +45,157 @@ interface AdManagerProps {
     actionTrigger?: string;
     clearActionTrigger?: () => void;
 }
+
+// FIX: Correct the Partial type to specify Campaign.
+interface CampaignFormProps {
+    campaign: Partial<Campaign>;
+    adCreatives: AdContent[];
+    onSave: (campaign: Partial<Campaign>) => void;
+    onCancel: () => void;
+}
+
+// FIX: Add missing AdCreativeForm component.
+const AdCreativeForm: React.FC<{
+    onSave: (adData: Partial<AdContent>, file?: File) => void;
+    onCancel: () => void;
+}> = ({ onSave, onCancel }) => {
+    const [adData, setAdData] = useState<Partial<AdContent>>({ title: '' });
+    const [file, setFile] = useState<File | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            const selectedFile = e.target.files[0];
+            setFile(selectedFile);
+            const fileName = selectedFile.name.replace(/\.[^/.]+$/, "");
+            const duration = await getAudioDuration(selectedFile);
+            setAdData(prev => ({ ...prev, title: fileName, duration }));
+        }
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!file) {
+            alert('Please select an audio file for the ad creative.');
+            return;
+        }
+
+        if (isUploading) return;
+
+        setIsUploading(true);
+        setUploadProgress(0);
+        // Simulate upload
+        const interval = setInterval(() => {
+            setUploadProgress(prev => {
+                const newProgress = prev + Math.floor(Math.random() * 20) + 10;
+                if (newProgress >= 100) {
+                    clearInterval(interval);
+                    setUploadProgress(100);
+                    setTimeout(() => onSave(adData, file), 500);
+                    return 100;
+                }
+                return newProgress;
+            });
+        }, 200);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ad Audio File</label>
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 dark:border-gray-600 border-dashed rounded-md">
+                    <div className="space-y-1 text-center">
+                        <MusicIcon />
+                        <div className="flex text-sm text-gray-600 dark:text-gray-400">
+                            <label htmlFor="ad-file-upload" className="relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-brand-blue hover:text-blue-700 focus-within:outline-none">
+                                <span>Upload a file</span>
+                                <input id="ad-file-upload" name="ad-file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="audio/*" disabled={isUploading} />
+                            </label>
+                        </div>
+                        {file ? <p className="text-xs text-green-500">{file.name}</p> : <p className="text-xs text-gray-500 dark:text-gray-400">MP3, WAV, etc.</p>}
+                    </div>
+                </div>
+                {isUploading && file && (
+                    <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
+                        <div className="bg-brand-blue h-2.5 rounded-full" style={{ width: `${uploadProgress}%` }}></div>
+                    </div>
+                )}
+            </div>
+            <InputField label="Creative Name / Title" name="title" value={adData.title || ''} onChange={e => setAdData(prev => ({ ...prev, title: e.target.value }))} placeholder="e.g., Summer Sale Spot" disabled={isUploading} />
+            <div className="flex justify-end pt-4 space-x-2">
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500" disabled={isUploading}>Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700" disabled={isUploading || !file}>{isUploading ? 'Uploading...' : 'Save Creative'}</button>
+            </div>
+        </form>
+    );
+};
+
+// FIX: Add missing CampaignForm component.
+const CampaignForm: React.FC<CampaignFormProps> = ({ campaign, adCreatives, onSave, onCancel }) => {
+    const [formData, setFormData] = useState(campaign);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleCreativeToggle = (creativeId: string) => {
+        setFormData(prev => {
+            const creativeIds = prev?.creativeIds || [];
+            const newCreativeIds = creativeIds.includes(creativeId)
+                ? creativeIds.filter(id => id !== creativeId)
+                : [...creativeIds, creativeId];
+            return { ...prev, creativeIds: newCreativeIds };
+        });
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSave(formData);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-6">
+            <InputField label="Campaign Name" name="name" value={formData.name || ''} onChange={handleChange} placeholder="e.g., Summer Sale 2024" />
+            <InputField label="Sponsor" name="sponsor" value={formData.sponsor || ''} onChange={handleChange} placeholder="e.g., TechCorp" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <InputField label="Start Date" name="startDate" type="date" value={formData.startDate || ''} onChange={handleChange} placeholder="" />
+                <InputField label="End Date" name="endDate" type="date" value={formData.endDate || ''} onChange={handleChange} placeholder="" />
+            </div>
+            <InputField label="Impression Goal" name="impressionGoal" type="number" value={String(formData.impressionGoal || 0)} onChange={handleChange} placeholder="e.g., 1000" />
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                <select name="status" value={formData.status || 'inactive'} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700">
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="completed">Completed</option>
+                </select>
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Ad Creatives</label>
+                <div className="space-y-2 max-h-40 overflow-y-auto border dark:border-gray-600 rounded-md p-2">
+                    {adCreatives.length > 0 ? adCreatives.map(ad => (
+                        <label key={ad.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={formData.creativeIds?.includes(ad.id) || false}
+                                onChange={() => handleCreativeToggle(ad.id)}
+                                className="h-4 w-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
+                            />
+                            <span>{ad.title} ({ad.duration})</span>
+                        </label>
+                    )) : <p className="text-sm text-gray-500 dark:text-gray-400 text-center p-2">No ad creatives found. Create one first.</p>}
+                </div>
+            </div>
+            <div className="flex justify-end pt-4 space-x-2">
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Save Campaign</button>
+            </div>
+        </form>
+    );
+};
+
 
 const AdManager: React.FC<AdManagerProps> = ({ actionTrigger, clearActionTrigger }) => {
     const { currentUser } = useAuth();
@@ -222,124 +375,5 @@ const AdManager: React.FC<AdManagerProps> = ({ actionTrigger, clearActionTrigger
     );
 };
 
-interface CampaignFormProps {
-    campaign: Partial<Campaign>;
-    adCreatives: AdContent[];
-    onSave: (campaign: Partial<Campaign>) => void;
-    onCancel: () => void;
-}
-
-const CampaignForm: React.FC<CampaignFormProps> = ({ campaign, adCreatives, onSave, onCancel }) => {
-    const [formData, setFormData] = useState(campaign);
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleCreativeSelect = (creativeId: string) => {
-        setFormData(prev => {
-            const currentCreatives = new Set(prev?.creativeIds || []);
-            if (currentCreatives.has(creativeId)) {
-                currentCreatives.delete(creativeId);
-            } else {
-                currentCreatives.add(creativeId);
-            }
-            return { ...prev, creativeIds: Array.from(currentCreatives) };
-        });
-    };
-    
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        onSave(formData);
-    };
-
-    return (
-        <form onSubmit={handleSubmit} className="space-y-6">
-            <InputField label="Campaign Name" name="name" value={formData.name || ''} onChange={handleChange} placeholder="e.g., Summer Sale 2024" />
-            <InputField label="Sponsor" name="sponsor" value={formData.sponsor || ''} onChange={handleChange} placeholder="e.g., TechCorp" />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <InputField label="Start Date" name="startDate" type="date" value={formData.startDate || ''} onChange={handleChange} placeholder="" />
-                <InputField label="End Date" name="endDate" type="date" value={formData.endDate || ''} onChange={handleChange} placeholder="" />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 <div>
-                    <label htmlFor="status" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
-                    <select id="status" name="status" value={formData.status || 'inactive'} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700">
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                        <option value="completed">Completed</option>
-                    </select>
-                </div>
-                <InputField label="Impression Goal" name="impressionGoal" type="number" value={String(formData.impressionGoal || '')} onChange={e => setFormData(prev => ({...prev, impressionGoal: Number(e.target.value)}))} placeholder="e.g., 1000" />
-            </div>
-
-            <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Ad Creatives</label>
-                <div className="space-y-2 max-h-48 overflow-y-auto border dark:border-gray-600 rounded-md p-3">
-                    {adCreatives.length > 0 ? adCreatives.map(ad => (
-                        <label key={ad.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={formData.creativeIds?.includes(ad.id)}
-                                onChange={() => handleCreativeSelect(ad.id)}
-                                className="h-4 w-4 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
-                            />
-                            <span className="text-sm text-gray-800 dark:text-gray-200">{ad.title} ({ad.duration})</span>
-                        </label>
-                    )) : <p className="text-sm text-center text-gray-500 dark:text-gray-400 p-4">No ad content found. Create one using the "Create Ad Creative" button.</p>}
-                </div>
-            </div>
-
-            <div className="flex justify-end pt-4 space-x-2">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Save Campaign</button>
-            </div>
-        </form>
-    );
-};
-
-const AdCreativeForm: React.FC<{
-    onSave: (item: Partial<AdContent>, file?: File) => void;
-    onCancel: () => void;
-}> = ({ onSave, onCancel }) => {
-    const [title, setTitle] = useState('');
-    const [file, setFile] = useState<File | null>(null);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!title || !file) {
-            alert('Please provide a title and select a file.');
-            return;
-        }
-        const duration = await getAudioDuration(file);
-        onSave({ title, duration }, file);
-    };
-
-    return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            <InputField label="Ad Title" name="title" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., Summer Sale Spot" />
-            <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Audio File</label>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 dark:border-gray-600 border-dashed rounded-md">
-                    <div className="space-y-1 text-center">
-                        <MusicIcon />
-                        <div className="flex text-sm text-gray-600 dark:text-gray-400">
-                            <label htmlFor="ad-file-upload" className="relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-brand-blue hover:text-blue-700 focus-within:outline-none">
-                                <span>Upload a file</span>
-                                <input id="ad-file-upload" name="file-upload" type="file" className="sr-only" onChange={e => setFile(e.target.files?.[0] || null)} accept="audio/*" />
-                            </label>
-                        </div>
-                        {file ? <p className="text-xs text-green-500">{file.name}</p> : <p className="text-xs text-gray-500 dark:text-gray-400">MP3, WAV, etc.</p>}
-                    </div>
-                </div>
-            </div>
-             <div className="flex justify-end pt-4 space-x-2">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Save Ad</button>
-            </div>
-        </form>
-    );
-};
-
+// FIX: Add default export for the AdManager component.
 export default AdManager;

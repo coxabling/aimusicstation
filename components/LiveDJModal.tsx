@@ -3,10 +3,17 @@ import { usePlayer } from '../contexts/PlayerContext';
 import { useToast } from '../contexts/ToastContext';
 import Modal from './Modal';
 import { BroadcastIcon } from './icons';
+import type { Theme } from '../App';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'broadcasting' | 'error';
 
-const LiveDJModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
+interface LiveDJModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    theme: Theme;
+}
+
+const LiveDJModal: React.FC<LiveDJModalProps> = ({ isOpen, onClose, theme }) => {
     const { startLiveDJBroadcast, endLiveDJBroadcast } = usePlayer();
     const { addToast } = useToast();
     const [status, setStatus] = useState<ConnectionStatus>('idle');
@@ -18,7 +25,7 @@ const LiveDJModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const animationFrameIdRef = useRef<number | null>(null);
     
-    const isDark = document.documentElement.classList.contains('dark');
+    const isDark = theme === 'dark';
 
     const draw = useCallback(() => {
         if (status === 'idle' || !analyserNodeRef.current || !canvasRef.current) {

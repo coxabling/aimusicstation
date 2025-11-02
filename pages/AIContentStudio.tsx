@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { SparklesIcon, HistoryIcon, TrashIcon, TrophyIcon } from '../components/icons';
@@ -10,6 +12,7 @@ import Modal from '../components/Modal';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchRssFeed, RssArticle } from '../services/rss';
 import { usePlayer } from '../contexts/PlayerContext';
+import { useLocalization, Language } from '../App';
 
 type AiTool = 'article' | 'news' | 'summarizer' | 'stationId' | 'jingle' | 'ad' | 'sportsUpdate';
 
@@ -28,13 +31,16 @@ const getDuration = (url: string): Promise<string> => new Promise(resolve => {
     const audio = document.createElement('audio');
     audio.preload = 'metadata';
     audio.onloadedmetadata = () => {
-        window.URL.revokeObjectURL(audio.src);
         const duration = audio.duration;
+        const blobUrl = audio.src;
         resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
+        // No revoke here, as it can cause issues if the audio element is still in use by the browser.
+        // It will be garbage collected when the element is removed.
     };
     audio.onerror = () => resolve('0:00');
     audio.src = url;
 });
+
 
 function decode(base64: string): Uint8Array {
     const binaryString = atob(base64);
@@ -124,6 +130,7 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
     const { currentUser, deductCredits } = useAuth();
     const { loadContent } = useContent();
     const { addToQueue } = usePlayer();
+    const { t } = useLocalization();
     const [isLoading, setIsLoading] = useState(false);
     const [topic, setTopic] = useState('');
     const [generatedContent, setGeneratedContent] = useState('');
@@ -135,6 +142,10 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
     const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
     const [audioUrl, setAudioUrl] = useState<string | null>(null);
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+
+    const [isTranslating, setIsTranslating] = useState(false);
+    const [targetLang, setTargetLang] = useState<Language>('es');
+    const [translatedContent, setTranslatedContent] = useState('');
 
     useEffect(() => {
         const fetchVoices = async () => {
@@ -149,6 +160,7 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
     useEffect(() => {
         setAudioUrl(null);
         setAudioBlob(null);
+        setTranslatedContent('');
     }, [generatedContent]);
 
     useEffect(() => {
@@ -215,6 +227,22 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
         };
         addToQueue([newItem]);
         addToast(`"${newItem.title}" added to the playout queue.`, 'success');
+    };
+
+    const handleTranslate = async () => {
+        if (!generatedContent) return;
+        setIsTranslating(true);
+        setTranslatedContent('');
+        try {
+            const langName = { es: 'Spanish', fr: 'French', en: 'English' }[targetLang];
+            const prompt = `Translate the following text into ${langName}:\n\n${generatedContent}`;
+            const response = await generateWithRetry({ model: 'gemini-2.5-flash', contents: prompt });
+            setTranslatedContent(response.text);
+        } catch (error) {
+            handleAiError(error, addToast);
+        } finally {
+            setIsTranslating(false);
+        }
     };
 
     const handleGenerateAudio = async () => {
@@ -342,6 +370,31 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
                 <button onClick={handleQueueArticle} disabled={!generatedContent} className="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none disabled:bg-green-400">Add to Queue</button>
                 <button onClick={() => onSave(topic, generatedContent)} disabled={!generatedContent} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400">Save as Article</button>
             </div>
+
+            {generatedContent && (
+                 <div className="space-y-4 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">{t('aistudio.translateScript')}</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                        <div className="md:col-span-2">
+                            <label htmlFor="target-lang" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('aistudio.translateTo')}</label>
+                            <select id="target-lang" value={targetLang} onChange={e => setTargetLang(e.target.value as Language)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700">
+                                <option value="es">Español</option>
+                                <option value="fr">Français</option>
+                            </select>
+                        </div>
+                        <button onClick={handleTranslate} disabled={isTranslating} className="flex items-center justify-center px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400 whitespace-nowrap">
+                            <SparklesIcon className="h-4 w-4 mr-2"/>
+                            {isTranslating ? 'Translating...' : t('aistudio.translate')}
+                        </button>
+                    </div>
+                    {translatedContent && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('aistudio.translation')}</label>
+                            <textarea value={translatedContent} readOnly rows={8} className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700/50"/>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {generatedContent && (
                  <div className="space-y-4 pt-6 border-t border-gray-200 dark:border-gray-700">
@@ -746,7 +799,9 @@ const ContentSummarizer: React.FC<{ onSave: (title: string, content: string) => 
             
             const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
-            if (!base64Audio) throw new Error("TTS generation failed.");
+            if (!base64Audio) {
+                throw new Error("TTS generation failed.");
+            }
 
             const pcmBytes = decode(base64Audio);
             const wavBlob = pcmToWav(pcmBytes, 24000, 1, 16);

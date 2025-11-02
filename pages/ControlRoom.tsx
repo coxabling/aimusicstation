@@ -63,11 +63,9 @@ const getDuration = (url: string): Promise<string> => new Promise(resolve => {
     audio.onloadedmetadata = () => {
         const duration = audio.duration;
         resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
-        URL.revokeObjectURL(audio.src); // Clean up blob URL
     };
     audio.onerror = () => {
         resolve('0:20'); // fallback
-        URL.revokeObjectURL(audio.src); // Clean up blob URL
     }
     audio.src = url;
 });

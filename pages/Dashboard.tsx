@@ -12,6 +12,7 @@ import { AudioContent, isPlayableContent, Playlist, StreamStatus } from '../type
 import { useAuth } from '../contexts/AuthContext';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useContent } from '../contexts/ContentContext';
+import { useLocalization } from '../App';
 
 interface DashboardProps {
     setActivePage: (page: Page) => void;
@@ -22,6 +23,7 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
     const { addToast } = useToast();
     const { currentItem, playoutQueue, currentQueueIndex, isPreviewing, streamStatus } = usePlayer();
     const { contentItems, audioContentItems } = useContent();
+    const { t } = useLocalization();
 
     const [playlists, setPlaylists] = useState<Playlist[]>([]);
     const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(true);
@@ -148,23 +150,23 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
     <div className="space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
-          title="Cloud Stream Status" 
+          title={t('dashboard.stats.streamStatus')} 
           value={streamStatusInfo.text}
           icon={<RadioIcon />} 
           statusColor={streamStatusInfo.color}
         />
         <StatCard 
-          title="Total Content" 
+          title={t('dashboard.stats.totalContent')} 
           value={totalContentCount.toLocaleString()} 
           icon={<MusicIcon />} 
         />
         <StatCard 
-          title="Playlists" 
+          title={t('dashboard.stats.playlists')} 
           value={isLoadingPlaylists ? '...' : playlists.length.toLocaleString()} 
           icon={<PlaylistIcon />} 
         />
         <StatCard 
-          title="AI Credits" 
+          title={t('dashboard.stats.aiCredits')}
           value={currentUser?.credits.toLocaleString() ?? '0'} 
           icon={<DollarSignIcon />} 
         />
@@ -172,11 +174,11 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 space-y-4">
-            <h3 className="text-xl font-semibold text-gray-800 dark:text-white">Live Playout Status</h3>
+            <h3 className="text-xl font-semibold text-gray-800 dark:text-white">{t('dashboard.livePlayout.title')}</h3>
             {nowPlayingItem ? (
                 <>
                     <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Now Playing</p>
+                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{t('dashboard.livePlayout.nowPlaying')}</p>
                          <div className="bg-blue-50 dark:bg-gray-700/50 rounded-lg p-3 flex items-center space-x-4 border-l-4 border-brand-blue">
                             <div className="text-brand-blue">{isPlayableContent(nowPlayingItem) ? <MusicIcon /> : <DocumentTextIcon />}</div>
                             <div className="flex-grow">
@@ -187,7 +189,7 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
                         </div>
                     </div>
                      <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Up Next</p>
+                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{t('dashboard.livePlayout.upNext')}</p>
                          {upNextItem ? (
                             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 flex items-center space-x-4">
                                 <div className="text-gray-500">{isPlayableContent(upNextItem) ? <MusicIcon /> : <DocumentTextIcon />}</div>
@@ -202,22 +204,22 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
                 </>
             ) : (
                 <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
-                    <p className="font-semibold text-gray-700 dark:text-gray-300">Station is Offline</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Go to the Schedule page to start your broadcast.</p>
+                    <p className="font-semibold text-gray-700 dark:text-gray-300">{t('dashboard.livePlayout.offline.title')}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('dashboard.livePlayout.offline.subtitle')}</p>
                      <button onClick={() => setActivePage('schedule')} className="mt-4 px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none flex items-center justify-center space-x-2 mx-auto">
                         <ScheduleIcon />
-                        <span>Go to Schedule</span>
+                        <span>{t('dashboard.livePlayout.offline.button')}</span>
                     </button>
                 </div>
             )}
         </div>
          <div className="md:col-span-1 space-y-6">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-                <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Station Vibe</h3>
+                <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">{t('dashboard.vibe.title')}</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                     {currentUser?.role === 'Admin'
-                        ? "Set the mood for your AI DJ. This will change the tone of generated announcements in real-time."
-                        : "The current station mood set by an admin. This affects the tone of AI announcements."
+                        ? t('dashboard.vibe.description_admin')
+                        : t('dashboard.vibe.description_user')
                     }
                 </p>
                 <select 
@@ -234,7 +236,7 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
                 </select>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-                 <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Clock</h3>
+                 <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">{t('dashboard.clock.title')}</h3>
                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 flex flex-col items-center justify-center">
                     <p className="text-3xl font-bold text-gray-800 dark:text-white">
                         {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -250,7 +252,7 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
             <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-800 dark:text-white">
                 <LinkIcon />
-                <span className="ml-2">Public Listen URL</span>
+                <span className="ml-2">{t('dashboard.listenUrl.title')}</span>
             </h3>
             {stationSettings.streamUrl ? (
                  <div className="flex items-center space-x-2">
@@ -258,16 +260,16 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
                     <button onClick={() => navigator.clipboard.writeText(stationSettings.streamUrl || '')} className="px-4 py-1.5 text-sm bg-gray-200 dark:bg-gray-600 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500">Copy</button>
                 </div>
             ) : (
-                <p className="text-sm text-gray-500 dark:text-gray-400">Set your public stream URL in Station Settings to share with listeners.</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.listenUrl.placeholder')}</p>
             )}
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
             <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-800 dark:text-white">
                 <SparklesIcon className="h-5 w-5 mr-2 text-purple-500" />
-                AI Recommendations from the Vault
+                {t('dashboard.recommendations.title')}
             </h3>
             {isLoadingRecs ? (
-                <p className="text-gray-500 dark:text-gray-400">Analyzing your library to find recommendations...</p>
+                <p className="text-gray-500 dark:text-gray-400">{t('dashboard.recommendations.loading')}</p>
             ) : recommendations.length > 0 ? (
                 <div className="space-y-3">
                     {recommendations.map(item => (
@@ -276,12 +278,12 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
                                 <p className="font-semibold text-gray-800 dark:text-white">{item.filename}</p>
                                 <p className="text-xs text-gray-500 dark:text-gray-400">{item.genre}</p>
                             </div>
-                            <button onClick={() => handleImport(item)} className="px-3 py-1 text-sm bg-brand-blue text-white rounded-md hover:bg-blue-700">Add to Library</button>
+                            <button onClick={() => handleImport(item)} className="px-3 py-1 text-sm bg-brand-blue text-white rounded-md hover:bg-blue-700">{t('dashboard.recommendations.button')}</button>
                         </div>
                     ))}
                 </div>
             ) : (
-                <p className="text-gray-500 dark:text-gray-400">Not enough data to generate recommendations.</p>
+                <p className="text-gray-500 dark:text-gray-400">{t('dashboard.recommendations.empty')}</p>
             )}
         </div>
     </div>

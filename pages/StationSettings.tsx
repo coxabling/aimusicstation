@@ -1,3 +1,5 @@
+
+
 import React, { useState, ChangeEvent, FormEvent, useEffect } from 'react';
 import InputField from '../components/InputField';
 import type { Playlist, Station } from '../types';
@@ -5,6 +7,7 @@ import { useToast } from '../contexts/ToastContext';
 import ToggleSwitch from '../components/ToggleSwitch';
 import * as db from '../services/db';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocalization } from '../App';
 
 interface StationSettingsProps {
     station: Station;
@@ -14,6 +17,7 @@ interface StationSettingsProps {
 const StationSettings: React.FC<StationSettingsProps> = ({ station: initialStation, onSave }) => {
     const { addToast } = useToast();
     const { currentUser } = useAuth();
+    const { t } = useLocalization();
     const [station, setStation] = useState<Station>(initialStation);
     const [playlists, setPlaylists] = useState<Playlist[]>([]);
 
@@ -61,13 +65,13 @@ const StationSettings: React.FC<StationSettingsProps> = ({ station: initialStati
     return (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
             <div className="max-w-2xl mx-auto">
-                <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Station Settings</h2>
+                <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">{t('settings.title')}</h2>
                 <form onSubmit={handleSubmit} className="space-y-6">
-                    <InputField label="Station Name" name="name" type="text" value={station.name} onChange={handleChange} placeholder="e.g., Megadance Radio" />
-                    <InputField label="Station Description" name="description" value={station.description} onChange={handleChange} placeholder="Your station's slogan or description" isTextarea />
+                    <InputField label={t('settings.stationName.label')} name="name" type="text" value={station.name} onChange={handleChange} placeholder="e.g., Megadance Radio" />
+                    <InputField label={t('settings.stationDesc.label')} name="description" value={station.description} onChange={handleChange} placeholder="Your station's slogan or description" isTextarea />
                     
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Radio Format</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('settings.radioFormat.label')}</label>
                         <fieldset className="mt-2">
                             <legend className="sr-only">Radio Format</legend>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -215,7 +219,7 @@ const StationSettings: React.FC<StationSettingsProps> = ({ station: initialStati
                     <div className="pt-5">
                         <div className="flex justify-end">
                             <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-blue">
-                                Save Settings
+                                {t('settings.save')}
                             </button>
                         </div>
                     </div>

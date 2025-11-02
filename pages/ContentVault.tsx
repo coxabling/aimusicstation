@@ -1,6 +1,3 @@
-
-
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { vaultContent, vaultCategories, VaultContentItem, mapVaultItemToAudioContent } from '../services/vaultContent';
 import * as db from '../services/db';
@@ -60,13 +57,11 @@ const getDuration = (url: string): Promise<string> => new Promise(resolve => {
     const audio = document.createElement('audio');
     audio.preload = 'metadata';
     audio.onloadedmetadata = () => {
-        window.URL.revokeObjectURL(audio.src);
         const duration = audio.duration;
         resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
     };
     audio.onerror = () => {
         resolve('0:05'); // fallback for short clips
-        URL.revokeObjectURL(audio.src); 
     }
     audio.src = url;
 });

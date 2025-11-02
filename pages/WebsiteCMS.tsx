@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { useContent } from '../contexts/ContentContext';
 import { usePlayer } from '../contexts/PlayerContext';
@@ -11,7 +9,6 @@ import ToggleSwitch from '../components/ToggleSwitch';
 import { GlobeIcon, ExternalLinkIcon } from '../components/icons';
 
 const WEBSITE_SETTINGS_KEY = 'websiteSettings';
-const PUBLIC_WEBSITE_DATA_KEY = 'publicWebsiteData';
 
 const defaultSettings: WebsiteSettings = {
     heroTitle: 'Welcome to Our Station',
@@ -52,30 +49,43 @@ const WebsiteCMS: React.FC = () => {
 
     const handlePublish = () => {
         setIsPublishing(true);
-
+        addToast('Opening live site and sending data...', 'info');
+    
         try {
             // Save the current CMS settings for persistence within the dashboard
             localStorage.setItem(WEBSITE_SETTINGS_KEY, JSON.stringify(settings));
-
+    
             // Gather all data needed for the public-facing website
             const articles = contentItems.filter(item => item.type === 'Article').slice(0, 5) as ArticleContent[]; // Get latest 5 articles
             const schedule = playoutQueue.slice(0, 10); // Get next 10 items
-
+    
             const publicData: PublicWebsiteData = {
                 settings,
                 station: stationSettings,
                 articles,
                 schedule,
             };
-
-            // "Publish" the data by saving it to where the public site can read it
-            localStorage.setItem(PUBLIC_WEBSITE_DATA_KEY, JSON.stringify(publicData));
-
-            addToast('Website content published successfully!', 'success');
+    
+            // Open the live site in a new window
+            const liveSiteWindow = window.open("https://aimusicstation.live/website.html", "_blank");
+    
+            if (liveSiteWindow) {
+                // Wait for the window to load, then send the data via postMessage
+                // This is more robust for cross-origin communication than localStorage
+                setTimeout(() => {
+                    // The targetOrigin MUST match the domain of the live site for security
+                    liveSiteWindow.postMessage(publicData, "https://aimusicstation.live");
+                    addToast('Website content published successfully!', 'success');
+                    setIsPublishing(false);
+                }, 2000); // 2-second delay to allow the page to load
+            } else {
+                addToast('Could not open live site window. Please check your pop-up blocker.', 'error');
+                setIsPublishing(false);
+            }
+    
         } catch (error) {
             console.error("Failed to publish website data:", error);
             addToast('An error occurred while publishing.', 'error');
-        } finally {
             setIsPublishing(false);
         }
     };
@@ -93,7 +103,7 @@ const WebsiteCMS: React.FC = () => {
                     </div>
                 </div>
                 <a 
-                    href="/website.html" 
+                    href="https://aimusicstation.live/website.html" 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="flex items-center justify-center w-full sm:w-auto px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg shadow-md hover:bg-gray-700 focus:outline-none"
