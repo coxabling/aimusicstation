@@ -457,7 +457,6 @@ export const ClipboardListIcon: React.FC = () => (
     </IconWrapper>
 );
 
-// FIX: Update TrophyIcon to accept an optional className prop.
 export const TrophyIcon: React.FC<{ className?: string }> = ({ className = "h-5 w-5" }) => (
     <IconWrapper className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M3 9h2m14 0h2M3 15h2m14 0h2M9 21h6" />

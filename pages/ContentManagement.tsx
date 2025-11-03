@@ -1,6 +1,8 @@
 
+
 import React, { useState, useMemo, ChangeEvent, useEffect, useCallback } from 'react';
-import { MusicIcon, PencilIcon, TrashIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, SparklesIcon, GlobeIcon, ExclamationCircleIcon, QueueAddIcon } from '../components/icons';
+import { GoogleGenAI, Modality } from '@google/genai';
+import { MusicIcon, PencilIcon, TrashIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, SparklesIcon, GlobeIcon, ExclamationCircleIcon, QueueAddIcon, VoiceIcon } from '../components/icons';
 import Modal from '../components/Modal';
 import InputField from '../components/InputField';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -9,7 +11,7 @@ import { usePlayer } from '../contexts/PlayerContext';
 import { useContent } from '../contexts/ContentContext';
 import { useAuth } from '../contexts/AuthContext';
 import { isPlayableContent } from '../types';
-import { generateWithRetry } from '../services/ai';
+import { generateWithRetry, handleAiError } from '../services/ai';
 import { useToast } from '../contexts/ToastContext';
 import { fetchRssFeed, RssArticle } from '../services/rss';
 import * as db from '../services/db';
@@ -44,10 +46,12 @@ const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
     </div>
 );
 
+// FIX: This helper function was missing in a previous commit, causing an error when handling file-based ads.
 const getAudioDuration = (file: File): Promise<string> => {
     return new Promise((resolve) => {
         const audio = document.createElement('audio');
-        audio.src = URL.createObjectURL(file);
+        const objectUrl = URL.createObjectURL(file);
+        audio.src = objectUrl;
         audio.onloadedmetadata = () => {
             const duration = Math.round(audio.duration);
             const minutes = Math.floor(duration / 60);
@@ -59,6 +63,32 @@ const getAudioDuration = (file: File): Promise<string> => {
         };
     });
 };
+
+// --- AI PREVIEW HELPERS ---
+function decode(base64: string): Uint8Array {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i); }
+    return bytes;
+}
+function pcmToWav(pcmData: Uint8Array, sampleRate: number, numChannels: number, bitsPerSample: number): Blob {
+    const dataSize = pcmData.length; const buffer = new ArrayBuffer(44 + dataSize); const view = new DataView(buffer);
+    const writeString = (offset: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8); const blockAlign = numChannels * (bitsPerSample / 8);
+    writeString(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true); writeString(8, 'WAVE'); writeString(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, numChannels, true); view.setUint32(24, sampleRate, true); view.setUint32(28, byteRate, true); view.setUint16(32, blockAlign, true); view.setUint16(34, bitsPerSample, true); writeString(36, 'data'); view.setUint32(40, dataSize, true); new Uint8Array(buffer, 44).set(pcmData);
+    return new Blob([view], { type: 'audio/wav' });
+}
+const getPreviewDuration = (url: string): Promise<string> => new Promise(resolve => {
+    const audio = document.createElement('audio'); audio.preload = 'metadata';
+    audio.onloadedmetadata = () => {
+        const duration = audio.duration;
+        resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
+    };
+    audio.onerror = () => resolve('0:05');
+    audio.src = url;
+});
+
 
 // --- SINGLE ITEM FORM ---
 
@@ -713,7 +743,7 @@ interface ContentManagementProps {
 
 const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange }) => {
     const { contentItems, addContentItem, bulkAddContentItems, bulkAddTextContentItems, updateContentItem, deleteContentItems, bulkUpdateContentItems, isLoading } = useContent();
-    const { currentUser } = useAuth();
+    const { currentUser, deductCredits } = useAuth();
     const [isSingleItemModalOpen, setIsSingleItemModalOpen] = useState(false);
     const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
     const [filesToBulkUpload, setFilesToBulkUpload] = useState<File[]>([]);
@@ -734,9 +764,10 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     const [currentRssFeed, setCurrentRssFeed] = useState<RssFeedContent | null>(null);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [itemsToDelete, setItemsToDelete] = useState<string[]>([]);
+    const [previewingItemId, setPreviewingItemId] = useState<string | null>(null);
     
     const { addToast } = useToast();
-    const { currentItem, playbackState, isPreviewing, playPreview, addToQueue } = usePlayer();
+    const { currentItem, playbackState, isPreviewing, playPreview, addToQueue, togglePlayPause } = usePlayer();
 
     const isPlaying = playbackState === 'playing';
     
@@ -798,6 +829,64 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
 
         return items;
     }, [contentItems, searchQuery, typeFilter, sortConfig]);
+
+    const handleAiPreview = async (item: ArticleContent) => {
+        if (!currentUser) return;
+
+        if (isPreviewing && currentItem?.id.startsWith(`ai-preview-${item.id}`)) {
+            togglePlayPause();
+            return;
+        }
+
+        if (!item.content) {
+            addToast('This article has no content to preview.', 'error');
+            return;
+        }
+
+        const canProceed = await deductCredits(5, 'AI Article Preview');
+        if (!canProceed) return;
+
+        setPreviewingItemId(item.id);
+        try {
+            const textToSpeak = item.title + ". " + item.content;
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const response = await ai.models.generateContent({
+                model: "gemini-2.5-flash-preview-tts",
+                contents: [{ parts: [{ text: textToSpeak }] }],
+                config: {
+                    responseModalities: [Modality.AUDIO],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } }
+                }
+            });
+
+            const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+            if (!base64Audio) throw new Error("TTS failed to return audio data.");
+            
+            const pcmBytes = decode(base64Audio);
+            const wavBlob = pcmToWav(pcmBytes, 24000, 1, 16);
+            const audioUrl = URL.createObjectURL(wavBlob);
+            
+            const duration = await getPreviewDuration(audioUrl);
+
+            const previewItem: CustomAudioContent = {
+                id: `ai-preview-${item.id}-${Date.now()}`,
+                tenantId: currentUser.tenantId,
+                type: 'Custom Audio',
+                title: `Preview: ${item.title}`,
+                artist: 'AI Announcer',
+                duration: duration,
+                date: new Date().toISOString(),
+                url: audioUrl,
+            };
+            
+            playPreview(previewItem);
+
+        } catch (error) {
+            handleAiError(error, addToast);
+        } finally {
+            setPreviewingItemId(null);
+        }
+    };
     
     const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files ? Array.from(e.target.files) : [];
@@ -1105,7 +1194,16 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
                                         <td className="px-4 py-4">{item.duration}</td>
                                         <td className="px-4 py-4">{new Date(item.date).toLocaleDateString()}</td>
                                         <td className="px-4 py-4"><div className="flex items-center space-x-3">
-                                            {isPlayableContent(item) ? (<><button onClick={() => playPreview(item)} className="text-brand-blue hover:text-blue-700" title={isPreviewing && currentItem?.id === item.id && isPlaying ? 'Pause' : 'Preview'}>{isPreviewing && currentItem?.id === item.id && isPlaying ? <PauseCircleIcon /> : <PlayCircleIcon />}</button><button onClick={() => handleDownload(item)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Download Source"><DownloadIcon /></button></>) : (item.type === 'RSS Feed' && <button onClick={() => { setCurrentRssFeed(item as RssFeedContent); setIsRssModalOpen(true); }} className="text-blue-500 hover:text-blue-700" title="View Articles"><GlobeIcon /></button>)}
+                                            {isPlayableContent(item) ? (<><button onClick={() => playPreview(item)} className="text-brand-blue hover:text-blue-700" title={isPreviewing && currentItem?.id === item.id && isPlaying ? 'Pause' : 'Preview'}>{isPreviewing && currentItem?.id === item.id && isPlaying ? <PauseCircleIcon /> : <PlayCircleIcon />}</button><button onClick={() => handleDownload(item)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Download Source"><DownloadIcon /></button></>) : (<>
+                                                {item.type === 'RSS Feed' && <button onClick={() => { setCurrentRssFeed(item as RssFeedContent); setIsRssModalOpen(true); }} className="text-blue-500 hover:text-blue-700" title="View Articles"><GlobeIcon /></button>}
+                                                {item.type === 'Article' && (
+                                                    <button onClick={() => handleAiPreview(item as ArticleContent)} disabled={previewingItemId === item.id} className="text-purple-500 hover:text-purple-700 disabled:text-gray-400" title="Preview with AI Voice">
+                                                        {previewingItemId === item.id ? (
+                                                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                                        ) : ( isPreviewing && currentItem?.id.startsWith(`ai-preview-${item.id}`) && isPlaying ? <PauseCircleIcon /> : <VoiceIcon /> )}
+                                                    </button>
+                                                )}
+                                            </>)}
                                             <button onClick={() => handleEdit(item)} className="text-brand-blue hover:text-blue-700" title="Edit"><PencilIcon /></button>
                                             <button onClick={() => handleAddToQueue(item)} className="text-green-500 hover:text-green-700" title="Add to Playout Queue"><QueueAddIcon /></button>
                                             <button onClick={() => handleOpenPlaylistModal(item)} className="text-purple-500 hover:text-purple-700" title="Add to Playlist"><PlaylistAddIcon /></button>

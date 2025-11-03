@@ -25,15 +25,18 @@ const CampaignStatusBadge: React.FC<{ status: Campaign['status'] }> = ({ status 
 const getAudioDuration = (file: File): Promise<string> => {
     return new Promise((resolve) => {
         const audio = document.createElement('audio');
-        audio.src = URL.createObjectURL(file);
+        const objectUrl = URL.createObjectURL(file);
+        audio.src = objectUrl;
         audio.onloadedmetadata = () => {
             const duration = Math.round(audio.duration);
             const minutes = Math.floor(duration / 60);
             const seconds = duration % 60;
             resolve(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+            // URL.revokeObjectURL(objectUrl); // This was causing the playback error
         };
         audio.onerror = () => {
             resolve('0:00'); // Resolve with default on error
+            // URL.revokeObjectURL(objectUrl); // This was causing the playback error
         };
     });
 };
