@@ -197,7 +197,11 @@ const Schedule: React.FC = () => {
                     id: audio.id, tenantId: audio.tenantId, title: audio.filename, type: 'Music', artist: audio.artist || '', 
                     duration: audio.duration, date: audio.dateTime, url: audio.url,
                     useAiAnnouncer: audio.announceTrack, announcerVoice: audio.announcementVoice,
-                    announcementWithBackgroundMusic: audio.announcementWithBackgroundMusic
+                    announcementWithBackgroundMusic: audio.announcementWithBackgroundMusic,
+                    bpm: audio.bpm,
+                    key: audio.key,
+                    energy: audio.energy,
+                    moodTags: audio.moodTags
                 } as MusicContent;
             }
             return {

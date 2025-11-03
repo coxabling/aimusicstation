@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import * as db from '../services/db';
-import { Playlist, ContentItem, AudioContent } from '../types';
+import { Playlist, ContentItem, AudioContent, MusicContent } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useContent } from '../contexts/ContentContext';
 import { ClipboardListIcon, SparklesIcon } from '../components/icons';
@@ -63,16 +62,28 @@ const ShowPrep: React.FC = () => {
         setGeneratedNotes('');
 
         try {
-            const tracklist = selectedPlaylistTracks.map((track, i) => `${i + 1}. "${'title' in track ? track.title : track.filename}" by ${track.artist}`).join('\n');
+            const tracklist = selectedPlaylistTracks.map((track, i) => {
+                const musicTrack = track as MusicContent | AudioContent;
+                const metadata = [
+                    musicTrack.genre,
+                    musicTrack.bpm ? `${musicTrack.bpm} BPM` : null,
+                    musicTrack.key,
+                    musicTrack.energy ? `Energy: ${musicTrack.energy}/10` : null,
+                    ...(musicTrack.moodTags || [])
+                ].filter(Boolean).join(', ');
+
+                return `${i + 1}. "${'title' in track ? track.title : track.filename}" by ${track.artist} (${metadata})`;
+            }).join('\n');
+
 
             const prompt = `You are a professional and witty radio show producer. Your task is to create a "Show Prep" sheet for a radio host based on a given tracklist. The station's vibe is energetic and fun.
 
-Here is the tracklist:
+Here is the tracklist with metadata:
 ${tracklist}
 
 Please provide the following in your response:
-1.  **Track Notes:** For each track, find one fascinating, little-known, and radio-friendly fact about the song or the artist.
-2.  **Transitions:** For each transition between songs, provide a creative and smooth segue or a clever talking point to bridge the gap.
+1.  **Track Notes:** For each track, find one fascinating, little-known, and radio-friendly fact about the song or the artist. Use the provided metadata to inform your tone.
+2.  **Transitions:** For each transition between songs, provide a creative and smooth segue or a clever talking point to bridge the gap. Use the metadata (BPM, key, energy, mood) to create more intelligent transitions.
 3.  **Audience Questions:** For every 2-3 songs, suggest an engaging, open-ended question to ask the audience that relates to the upcoming music.
 
 Format the entire output in clean, readable Markdown. Use headings for each section (e.g., "### Track Notes", "### Transitions", "### Audience Questions").`;

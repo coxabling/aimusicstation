@@ -1,8 +1,8 @@
-import type { ContentItem, AudioContent, ArticleHistoryItem, SavedSchedule, Playlist, ClonedVoice, User, RssFeedSettings, SocialPost, Submission, Campaign, CreditUsageLog, Clockwheel, Webhook } from '../types';
+import type { ContentItem, AudioContent, ArticleHistoryItem, SavedSchedule, Playlist, ClonedVoice, User, RssFeedSettings, SocialPost, Submission, Campaign, CreditUsageLog, Clockwheel, Webhook, AIReport } from '../types';
 
 const DB_NAME = 'ai-music-station-db';
-// Increment DB version to add new webhooks object store.
-const DB_VERSION = 13; // Increment version for schema change
+// Increment DB version to add new aiReports object store.
+const DB_VERSION = 14; // Increment version for schema change
 const CONTENT_STORE = 'contentItems';
 const AUDIO_STORE = 'audioContent';
 const HISTORY_STORE = 'articleHistory';
@@ -17,6 +17,7 @@ const CAMPAIGNS_STORE = 'campaigns';
 const CREDIT_LOGS_STORE = 'creditUsageLogs';
 const CLOCKWHEELS_STORE = 'clockwheels';
 const WEBHOOKS_STORE = 'webhooks';
+const AI_REPORTS_STORE = 'aiReports';
 
 
 let db: IDBDatabase;
@@ -58,6 +59,7 @@ const dbReady = new Promise<IDBDatabase>((resolve, reject) => {
         createStoreWithIndex(CREDIT_LOGS_STORE);
         createStoreWithIndex(CLOCKWHEELS_STORE);
         createStoreWithIndex(WEBHOOKS_STORE);
+        createStoreWithIndex(AI_REPORTS_STORE);
 
         if (!storeNames.contains(USERS_STORE)) {
             const userStore = tempDb.createObjectStore(USERS_STORE, { keyPath: 'id' });
@@ -102,8 +104,8 @@ export const seedInitialData = async () => {
             promisifyRequest(submissionStore.put({ id: 'sub4', tenantId: defaultTenantId, type: 'Shoutout', from: 'Anonymous', message: 'This station is the best!', status: 'rejected', createdAt: new Date(Date.now() - 10800000).toISOString() })),
             
             // Seed Ads
-            promisifyRequest(contentStore.put({ id: 'ad-seed-1', tenantId: defaultTenantId, type: 'Ad', title: 'TechCorp Ad Spot', duration: '0:30', date: new Date().toISOString(), url: 'https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/Monplaisir/Antigravity/Monplaisir_-_04_-_Antigravity.mp3' })),
-            promisifyRequest(contentStore.put({ id: 'ad-seed-2', tenantId: defaultTenantId, type: 'Ad', title: 'Coffee House Promo', duration: '0:15', date: new Date().toISOString(), url: 'https://files.freemusicarchive.org/storage-freemusicarchive-org/music/ccCommunity/E_s_Jammy_Jams/The_Jazz_Piano/E_s_Jammy_Jams_-_The_Jazz_Piano.mp3' })),
+            promisifyRequest(contentStore.put({ id: 'ad-seed-1', tenantId: defaultTenantId, type: 'Ad', title: 'TechCorp Ad Spot', duration: '0:30', date: new Date().toISOString(), url: 'https://www.zapsplat.com/wp-content/uploads/2015/06/corporate-business-5.mp3' })),
+            promisifyRequest(contentStore.put({ id: 'ad-seed-2', tenantId: defaultTenantId, type: 'Ad', title: 'Coffee House Promo', duration: '0:15', date: new Date().toISOString(), url: 'https://www.zapsplat.com/wp-content/uploads/2015/06/jazz-cafe-1.mp3' })),
 
             // Seed Campaigns
             promisifyRequest(campaignStore.put({ id: 'camp-1', tenantId: defaultTenantId, name: 'Summer Sale 2024', sponsor: 'TechCorp', startDate: new Date('2024-07-01').toISOString(), endDate: new Date('2024-08-31').toISOString(), status: 'active', impressionGoal: 1000, impressions: 125, creativeIds: ['ad-seed-1'] })),
@@ -339,6 +341,12 @@ export const deleteClockwheel = (id: string, tenantId: string): Promise<void> =>
 export const getAllWebhooks = (tenantId: string): Promise<Webhook[]> => getAllByTenant(WEBHOOKS_STORE, tenantId);
 export const saveWebhook = (item: Webhook): Promise<void> => saveItem(WEBHOOKS_STORE, item);
 export const deleteWebhook = (id: string, tenantId: string): Promise<void> => deleteItems(WEBHOOKS_STORE, [id], tenantId);
+
+// --- AI Reports ---
+export const getAllAIReports = (tenantId: string): Promise<AIReport[]> => getAllByTenant(AI_REPORTS_STORE, tenantId);
+export const saveAIReport = (report: AIReport): Promise<void> => saveItem(AI_REPORTS_STORE, report);
+export const deleteAIReport = (id: string, tenantId: string): Promise<void> => deleteItems(AI_REPORTS_STORE, [id], tenantId);
+
 
 // --- RSS Feed Settings ---
 export const getAllRssFeedSettings = (tenantId: string): Promise<RssFeedSettings[]> => getAllByTenant(RSS_FEEDS_STORE, tenantId);

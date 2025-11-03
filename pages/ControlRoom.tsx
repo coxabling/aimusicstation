@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-// FIX: Import RssArticle from its correct source in services/rss.ts
-import { Submission, SocialPost, RssFeedSettings, ContentItem, AudioContent, User, isPlayableContent, CustomAudioContent } from '../types';
+import { Submission, SocialPost, RssFeedSettings, ContentItem, AudioContent, User, isPlayableContent, CustomAudioContent, AIReport } from '../types';
 import * as db from '../services/db';
 import { fetchRssFeed, RssArticle } from '../services/rss';
 import { generateWithRetry, handleAiError } from '../services/ai';
@@ -10,8 +9,9 @@ import { useToast } from '../contexts/ToastContext';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useContent } from '../contexts/ContentContext';
 import { InboxIcon, CheckIcon, XIcon, MusicIcon, DocumentTextIcon, ShareIcon, SparklesIcon, TrashIcon } from '../components/icons';
+import { marked } from 'marked';
 
-type ControlRoomItemType = 'Shoutout' | 'Song Request' | 'RSS Article' | 'Social Post Draft';
+type ControlRoomItemType = 'Shoutout' | 'Song Request' | 'RSS Article' | 'Social Post Draft' | 'AI Report';
 interface UnifiedItem {
     id: string;
     type: ControlRoomItemType;
@@ -22,7 +22,6 @@ interface UnifiedItem {
 
 // --- AUDIO HELPERS (copied from other components for self-containment) ---
 
-// FIX: Correctly define helper functions instead of declaring empty functions and re-assigning them.
 function decode(base64: string): Uint8Array {
     const binaryString = atob(base64);
     const len = binaryString.length;
@@ -103,10 +102,11 @@ const ControlRoom: React.FC = () => {
         if (!currentUser) return;
         setIsLoading(true);
 
-        const [submissions, socialPosts, rssFeeds] = await Promise.all([
+        const [submissions, socialPosts, rssFeeds, aiReports] = await Promise.all([
             db.getAllSubmissions(currentUser.tenantId),
             db.getAllSocialPosts(currentUser.tenantId),
-            db.getAllRssFeedSettings(currentUser.tenantId)
+            db.getAllRssFeedSettings(currentUser.tenantId),
+            db.getAllAIReports(currentUser.tenantId),
         ]);
 
         const submissionItems: UnifiedItem[] = submissions.filter(s => s.status === 'pending').map(s => ({
@@ -115,6 +115,10 @@ const ControlRoom: React.FC = () => {
 
         const socialPostItems: UnifiedItem[] = socialPosts.filter(p => p.status === 'draft').map(p => ({
             id: p.id, type: 'Social Post Draft', data: p, createdAt: new Date(p.createdAt), source: 'Social Media'
+        }));
+
+        const reportItems: UnifiedItem[] = aiReports.map(r => ({
+            id: r.id, type: 'AI Report', data: r, createdAt: new Date(r.date), source: 'AI Consultant'
         }));
 
         const feedsToApprove = rssFeeds.filter(f => f.approveBeforeAiring && f.published);
@@ -160,7 +164,7 @@ const ControlRoom: React.FC = () => {
             addToast(`${totalNewArticles} new article(s) auto-published from RSS feeds.`, 'info');
         }
 
-        const combined = [...submissionItems, ...socialPostItems, ...rssItems];
+        const combined = [...submissionItems, ...socialPostItems, ...rssItems, ...reportItems];
         combined.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
         setAllItems(combined);
         setIsLoading(false);
@@ -177,6 +181,12 @@ const ControlRoom: React.FC = () => {
         setProcessingId(itemId);
         try {
             switch (item.type) {
+                case 'AI Report':
+                    if (action === 'delete') { // "Dismiss"
+                        await db.deleteAIReport(item.id, currentUser.tenantId);
+                        addToast('AI Report dismissed.', 'info');
+                    }
+                    break;
                 case 'Shoutout':
                     if (action === 'approve') {
                          const canProceed = await deductCredits(20, 'AI Shoutout Generation');
@@ -255,6 +265,7 @@ const ControlRoom: React.FC = () => {
             case 'Song Request': return <MusicIcon />;
             case 'RSS Article': return <DocumentTextIcon />;
             case 'Social Post Draft': return <ShareIcon />;
+            case 'AI Report': return <SparklesIcon className="h-5 w-5 text-blue-500" />;
             default: return <InboxIcon />;
         }
     };
@@ -269,7 +280,7 @@ const ControlRoom: React.FC = () => {
 
             {/* Filters */}
             <div className="flex space-x-2 border-b dark:border-gray-700 mb-4 overflow-x-auto">
-                {(['All', 'Shoutout', 'Song Request', 'RSS Article', 'Social Post Draft'] as const).map(filter => (
+                {(['All', 'Shoutout', 'Song Request', 'RSS Article', 'Social Post Draft', 'AI Report'] as const).map(filter => (
                     <button key={filter} onClick={() => setActiveFilter(filter)} className={`px-4 py-2 text-sm font-medium whitespace-nowrap ${activeFilter === filter ? 'text-brand-blue border-b-2 border-brand-blue' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                         {filter}
                     </button>
@@ -320,8 +331,19 @@ const ControlRoom: React.FC = () => {
                                             <button onClick={() => handleAction(item.id, 'delete')} disabled={processingId === item.id} className="p-2 text-red-500 hover:text-red-700 disabled:opacity-50"><TrashIcon /></button>
                                         </>
                                     )}
+                                    {item.type === 'AI Report' && (
+                                        <button onClick={() => handleAction(item.id, 'delete')} disabled={processingId === item.id} className="px-3 py-1 text-xs bg-gray-500 text-white rounded-md hover:bg-gray-600 disabled:bg-gray-300">Dismiss</button>
+                                    )}
                                 </div>
                             </div>
+                             {item.type === 'AI Report' && (
+                                <div className="mt-4 pt-4 border-t dark:border-gray-600">
+                                    <div 
+                                        className="prose prose-sm dark:prose-invert max-w-none" 
+                                        dangerouslySetInnerHTML={{ __html: marked(item.data.content) }}
+                                    />
+                                </div>
+                            )}
                         </div>
                     </div>
                 ))}

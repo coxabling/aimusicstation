@@ -19,7 +19,7 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
-    const { stationSettings, saveStationSettings, currentUser } = useAuth();
+    const { stationSettings, saveStationSettings, currentUser, deductCredits } = useAuth();
     const { addToast } = useToast();
     const { currentItem, playoutQueue, currentQueueIndex, isPreviewing, streamStatus } = usePlayer();
     const { contentItems, audioContentItems } = useContent();
@@ -27,6 +27,8 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
 
     const [playlists, setPlaylists] = useState<Playlist[]>([]);
     const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(true);
+    const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+    const REPORT_COST = 50;
 
     const handleVibeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         if (currentUser?.role !== 'Admin') return;
@@ -125,6 +127,66 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
         };
         await db.saveAudioContent(newItem);
         addToast(`"${item.filename}" added to your Audio Content!`, 'success');
+    };
+
+    const handleGenerateReport = async () => {
+        if (!currentUser) return;
+        
+        const canProceed = await deductCredits(REPORT_COST, 'Station Health Report');
+        if (!canProceed) return;
+
+        setIsGeneratingReport(true);
+        addToast('Generating Station Health Report... this may take a moment.', 'info');
+        try {
+            const [submissions, campaigns, clockwheels] = await Promise.all([
+                db.getAllSubmissions(currentUser.tenantId),
+                db.getAllCampaigns(currentUser.tenantId),
+                db.getAllClockwheels(currentUser.tenantId)
+            ]);
+
+            const musicGenres = [...new Set(audioContentItems.filter(i => i.type === 'Music' && i.genre).map(i => i.genre))];
+            const songRequests = submissions.filter(s => s.type === 'Song Request').map(s => s.message);
+
+            const prompt = `You are an expert radio programming consultant. Analyze the following data for an online radio station and provide 3-4 actionable insights in a markdown list format. Identify both problems and opportunities.
+
+**Station Data:**
+- Total Music Tracks: ${audioContentItems.filter(i => i.type === 'Music').length}
+- Total Jingles/Stingers: ${audioContentItems.filter(i => i.type === 'Jingle').length}
+- Total Ads: ${audioContentItems.filter(i => i.type === 'Ad').length}
+- Music Library Genres: ${musicGenres.length > 0 ? musicGenres.join(', ') : 'None.'}
+- Recent Song Requests: ${songRequests.length > 0 ? songRequests.slice(0, 10).join('; ') : 'None.'}
+- Active Ad Campaigns: ${campaigns.filter(c => c.status === 'active').length}
+- Saved Show Designs (Clockwheels): ${clockwheels.length}
+- Monetization Gaps: ${clockwheels.some(c => !c.blocks.some(b => b.type === 'Ad')) ? 'At least one show design has no ad blocks.' : 'All show designs include ad blocks.'}
+
+**Your Task:**
+Based on the data, provide concrete, actionable advice. Examples:
+- "Warning: Your 'Jingles' library is empty. Broadcasts may sound repetitive. Consider adding assets from the Content Vault."
+- "Opportunity: Your listeners are requesting a lot of Synthwave. Consider creating a dedicated '80s Power Hour' using the Show Designer to capitalize on this trend."
+- "Notice: Your 'Morning Drive' clockwheel has no ad blocks scheduled. This is a missed monetization opportunity."
+
+Format your response as a markdown list, with each item starting with a bolded title (e.g., "**Focus on Synthwave:** ...").`;
+            
+            const response = await generateWithRetry({ model: 'gemini-2.5-pro', contents: prompt });
+            
+            await db.saveAIReport({
+                id: `report-${Date.now()}`,
+                tenantId: currentUser.tenantId,
+                date: new Date().toISOString(),
+                content: response.text,
+            });
+
+            addToast('Station Health Report is ready in your Control Room!', 'success', {
+                label: 'View Report',
+                onClick: () => setActivePage('controlRoom')
+            });
+
+        } catch (error) {
+            console.error('Failed to generate station health report', error);
+            addToast('An error occurred while generating the report.', 'error');
+        } finally {
+            setIsGeneratingReport(false);
+        }
     };
     
     const nowPlayingItem = !isPreviewing && currentQueueIndex >= 0 ? currentItem : null;
@@ -286,6 +348,22 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
                 <p className="text-gray-500 dark:text-gray-400">{t('dashboard.recommendations.empty')}</p>
             )}
         </div>
+    </div>
+     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+        <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-800 dark:text-white">
+            <SparklesIcon className="h-5 w-5 mr-2 text-purple-500" />
+            Station Health & Opportunity Report
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Let the AI act as your station consultant. It will scan your content library, schedules, and audience engagement to identify problems and suggest opportunities for improvement. The report will be delivered to your Control Room.
+        </p>
+        <button 
+            onClick={handleGenerateReport} 
+            disabled={isGeneratingReport}
+            className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400"
+        >
+            {isGeneratingReport ? 'Analyzing...' : `Generate Report (${REPORT_COST} Credits)`}
+        </button>
     </div>
 
     </div>

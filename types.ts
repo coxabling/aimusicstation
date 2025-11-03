@@ -79,8 +79,11 @@ export interface MusicContent extends BaseContentItem {
   file?: File;
   album?: string;
   year?: string;
-  mood?: string;
   notes?: string;
+  bpm?: number;
+  key?: string;
+  energy?: number; // 1-10
+  moodTags?: string[];
 }
 
 export interface ArticleContent extends BaseContentItem {
@@ -149,6 +152,10 @@ export interface AudioContent {
   published: boolean;
   url?: string;
   file?: File;
+  bpm?: number;
+  key?: string;
+  energy?: number;
+  moodTags?: string[];
 }
 
 export interface CalendarEvent {
@@ -268,6 +275,13 @@ export interface Webhook {
     name: string;
     url: string;
     service: WebhookService;
+}
+
+export interface AIReport {
+  id: string;
+  tenantId: string;
+  date: string;
+  content: string; // Markdown content from AI
 }
 
 export interface WebsiteSettings {

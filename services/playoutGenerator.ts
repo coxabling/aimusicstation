@@ -1,4 +1,4 @@
-import type { ContentItem, Campaign, Clockwheel, ClockwheelBlock, Station, ClockwheelBlockType } from '../types';
+import type { ContentItem, Campaign, Clockwheel, ClockwheelBlock, Station, ClockwheelBlockType, MusicContent } from '../types';
 import { isPlayableContent } from '../types';
 import { generateWithRetry } from './ai';
 
@@ -134,10 +134,35 @@ export const generateScheduleFromClockwheel = async (
                 pool = availableContentByType['Music'] || [];
                 if (rule.toLowerCase() !== 'any' && rule.trim() !== '') {
                     const rules = rule.toLowerCase().split(',').map(r => r.trim());
+                    const tagRules = rules.filter(r => !r.match(/[<>=]/));
+                    const numericRules = rules.filter(r => r.match(/[<>=]/)).map(r => {
+                        const match = r.match(/(\w+)\s*([<>=]+)\s*(\d+(\.\d+)?)/);
+                        if (match) return { key: match[1] as keyof MusicContent, op: match[2], val: Number(match[3]) };
+                        return null;
+                    }).filter((r): r is NonNullable<typeof r> => !!r);
+
                     pool = pool.filter(item => {
-                        const musicItem = item as any;
-                        const itemTags = [musicItem.genre, musicItem.mood, musicItem.notes].filter(Boolean).join(' ').toLowerCase();
-                        return rules.some(r => itemTags.includes(r));
+                        const musicItem = item as MusicContent;
+                        
+                        const tagsMatch = tagRules.length === 0 || tagRules.every(r => {
+                            const itemTags = [musicItem.genre, ...(musicItem.moodTags || [])].filter(Boolean).join(' ').toLowerCase();
+                            return itemTags.includes(r);
+                        });
+                        if (!tagsMatch) return false;
+
+                        const numericMatch = numericRules.every(rule => {
+                            const itemVal = musicItem[rule.key];
+                            if (itemVal === undefined || typeof itemVal !== 'number') return false;
+                            switch (rule.op) {
+                                case '>': return itemVal > rule.val;
+                                case '<': return itemVal < rule.val;
+                                case '>=': return itemVal >= rule.val;
+                                case '<=': return itemVal <= rule.val;
+                                case '=': return itemVal == rule.val;
+                                default: return false;
+                            }
+                        });
+                        return numericMatch;
                     });
                 }
                 break;
@@ -186,7 +211,7 @@ export const generateScheduleFromClockwheel = async (
                         artist: (c as any).artist || '',
                         duration: parseDurationToSeconds(c.duration), 
                         genre: (c as any).genre || '',
-                        mood: (c as any).mood || ''
+                        mood: (c as any).moodTags?.join(', ') || ''
                     }));
                     
                     const prompt = `You are a professional radio program director. Create a playlist for a ${durationMinutes}-minute radio block with the theme "${theme}".

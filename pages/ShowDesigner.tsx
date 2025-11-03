@@ -75,7 +75,7 @@ const ClockwheelForm: React.FC<{
                         </div>
                         <div className="md:col-span-5">
                              <label className="text-xs font-medium">{block.type === 'Thematic' ? 'Theme Prompt' : 'Rule / Genre'}</label>
-                            <input type="text" value={block.rule} onChange={e => handleBlockChange(index, 'rule', e.target.value)} placeholder={block.type === 'Thematic' ? "e.g., 80s summer beach party" : "e.g., Upbeat, Pop"} className="w-full mt-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700" />
+                            <input type="text" value={block.rule} onChange={e => handleBlockChange(index, 'rule', e.target.value)} placeholder={block.type === 'Thematic' ? "e.g., 80s summer beach party" : "e.g., Upbeat, Pop, energy > 7"} className="w-full mt-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700" />
                         </div>
                          <div className="md:col-span-1 text-right">
                              <label className="text-xs font-medium hidden md:block">&nbsp;</label>
@@ -89,7 +89,7 @@ const ClockwheelForm: React.FC<{
                 </button>
             </div>
              <div className="flex justify-end pt-4 space-x-2">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500">Cancel</button>
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300">Cancel</button>
                 <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Save Design</button>
             </div>
         </form>

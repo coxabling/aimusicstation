@@ -1,6 +1,7 @@
 
+
 import React, { useState, useMemo, ChangeEvent, useEffect, useCallback } from 'react';
-import { GoogleGenAI, Modality } from '@google/genai';
+import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { MusicIcon, PencilIcon, TrashIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, SparklesIcon, GlobeIcon, ExclamationCircleIcon, QueueAddIcon, VoiceIcon } from '../components/icons';
 import Modal from '../components/Modal';
 import InputField from '../components/InputField';
@@ -16,6 +17,47 @@ import { fetchRssFeed, RssArticle } from '../services/rss';
 import * as db from '../services/db';
 
 // --- HELPER & UTILITY COMPONENTS ---
+
+const analysisSchema = {
+    type: Type.OBJECT,
+    properties: {
+        bpm: { type: Type.NUMBER, description: "Beats per minute of the track." },
+        key: { type: Type.STRING, description: "Musical key, e.g., 'C minor'." },
+        energy: { type: Type.INTEGER, description: "Energy level from 1 to 10." },
+        moodTags: { 
+            type: Type.ARRAY, 
+            description: "An array of 3-5 descriptive mood tags.",
+            items: { type: Type.STRING }
+        }
+    },
+    required: ["bpm", "key", "energy", "moodTags"]
+};
+
+const runMusicAnalysis = async (file: File, deductCredits: (amount: number, feature: string) => Promise<boolean>, addToast: (message: string, type: 'success' | 'error' | 'info') => void): Promise<Partial<MusicContent>> => {
+    const canProceed = await deductCredits(10, 'Music Analysis');
+    if (!canProceed) {
+        addToast('Insufficient credits for AI Music Analysis.', 'error');
+        throw new Error('Insufficient credits');
+    }
+    
+    try {
+        const prompt = `You are an expert music analysis tool. Analyze the following track based on its filename and generate metadata. Filename: '${file.name}'. Provide the BPM (beats per minute), musical key (e.g., 'C minor'), energy level (an integer from 1 to 10, where 10 is highest energy), and an array of 3-5 descriptive mood tags (e.g., 'driving', 'melancholic', 'summer vibe'). Return ONLY a JSON object matching the required schema.`;
+        
+        const response = await generateWithRetry({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { responseMimeType: "application/json", responseSchema: analysisSchema }
+        });
+
+        const result = JSON.parse(response.text);
+        addToast(`Successfully analyzed "${file.name}"!`, 'success');
+        return result as Partial<MusicContent>;
+    } catch (error) {
+        handleAiError(error, addToast);
+        throw error;
+    }
+};
+
 
 const getPersonaPrompt = (vibe: string): string => {
     switch (vibe) {
@@ -98,6 +140,7 @@ const ContentForm: React.FC<{ item: Partial<ContentItem>; onSave: (item: Partial
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isGeneratingAnnouncement, setIsGeneratingAnnouncement] = useState(false);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
     const { addToast } = useToast();
     const { stationSettings, deductCredits } = useAuth();
 
@@ -133,31 +176,52 @@ const ContentForm: React.FC<{ item: Partial<ContentItem>; onSave: (item: Partial
 
     const handleToggle = (name: string, value: boolean) => setCurrentItem(prev => ({ ...prev, [name]: value }));
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (file && !isUploading) {
-            if (currentItem.type !== 'Music' && currentItem.type !== 'Ad' && currentItem.type !== 'Custom Audio') {
-                onSave(currentItem, file);
-                return;
-            }
+        const isNewMusicUpload = !currentItem.id && file && currentItem.type === 'Music';
+        if (isUploading || isAnalyzing) return;
 
-            setIsUploading(true);
-            setUploadProgress(0);
-            const interval = setInterval(() => {
-                setUploadProgress(prev => {
-                    const newProgress = prev + Math.floor(Math.random() * 15) + 5;
-                    if (newProgress >= 100) {
-                        clearInterval(interval);
-                        setUploadProgress(100);
-                        setTimeout(() => onSave(currentItem, file), 500);
-                        return 100;
-                    }
-                    return newProgress;
-                });
-            }, 250);
-        } else if (!isUploading) {
-            onSave(currentItem, file);
+        let itemData = { ...currentItem };
+
+        if (isNewMusicUpload) {
+            setIsAnalyzing(true);
+            try {
+                const analysisData = await runMusicAnalysis(file, deductCredits, addToast);
+                itemData = { ...itemData, ...analysisData };
+            } catch (error) {
+                // Analysis failed, but we can still proceed with saving
+                addToast('AI analysis failed. Saving without metadata.', 'error');
+            } finally {
+                setIsAnalyzing(false);
+            }
         }
+        
+        if (file) {
+            simulateUploadAndSave(itemData, file);
+        } else if (!isUploading) {
+            onSave(itemData);
+        }
+    };
+
+    const simulateUploadAndSave = (itemToSave: Partial<ContentItem>, fileToSave?: File) => {
+        if (!fileToSave) {
+            onSave(itemToSave);
+            return;
+        }
+        setIsUploading(true);
+        setUploadProgress(0);
+        const interval = setInterval(() => {
+            setUploadProgress(prev => {
+                const newProgress = prev + Math.floor(Math.random() * 15) + 5;
+                if (newProgress >= 100) {
+                    clearInterval(interval);
+                    setUploadProgress(100);
+                    setTimeout(() => onSave(itemToSave, fileToSave), 500);
+                    return 100;
+                }
+                return newProgress;
+            });
+        }, 250);
     };
 
     const handleGenerateAnnouncement = async () => {
@@ -192,12 +256,15 @@ Keep the announcement under 45 seconds when read aloud.`;
     };
     
     const type = currentItem.type || 'Music';
+    const isProcessing = isUploading || isAnalyzing;
+    const buttonText = isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : isAnalyzing ? 'Analyzing...' : 'Save Content';
+
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <div>
                 <label htmlFor="type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content Type</label>
-                <select id="type" name="type" value={type} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-200 dark:disabled:bg-gray-600" disabled={isUploading}>
+                <select id="type" name="type" value={type} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-200 dark:disabled:bg-gray-600" disabled={isProcessing}>
                     <option>Music</option><option>Article</option><option>Ad</option><option>Custom Audio</option><option>RSS Feed</option><option>Relay Stream</option>
                 </select>
             </div>
@@ -208,9 +275,9 @@ Keep the announcement under 45 seconds when read aloud.`;
                         <div className="space-y-1 text-center">
                             <MusicIcon />
                             <div className="flex text-sm text-gray-600 dark:text-gray-400">
-                                <label htmlFor="file-upload" className={`relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-brand-blue hover:text-blue-700 focus-within:outline-none ${isUploading ? 'cursor-not-allowed text-gray-400' : ''}`}>
+                                <label htmlFor="file-upload" className={`relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-brand-blue hover:text-blue-700 focus-within:outline-none ${isProcessing ? 'cursor-not-allowed text-gray-400' : ''}`}>
                                     <span>Upload a file</span>
-                                    <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="audio/*" disabled={isUploading} />
+                                    <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="audio/*" disabled={isProcessing} />
                                 </label>
                             </div>
                             {file ? <p className="text-xs text-green-500">{file.name}</p> : <p className="text-xs text-gray-500 dark:text-gray-400">MP3, WAV, etc.</p>}
@@ -222,41 +289,52 @@ Keep the announcement under 45 seconds when read aloud.`;
                              <ProgressBar progress={uploadProgress} />
                         </div>
                     )}
+                    {isAnalyzing && <p className="text-sm text-center text-purple-600 dark:text-purple-400 font-semibold mt-2">Running AI Music Analysis...</p>}
                 </div>
             )}
-            <InputField label="Title" name="title" value={currentItem.title || ''} onChange={handleChange} placeholder="Content Title" disabled={isUploading} />
+            <InputField label="Title" name="title" value={currentItem.title || ''} onChange={handleChange} placeholder="Content Title" disabled={isProcessing} />
             {(type === 'Music' || type === 'Custom Audio' || type === 'Ad' || type === 'Relay Stream') && (
-                <InputField label="Duration" name="duration" value={currentItem.duration || ''} onChange={handleChange} placeholder="e.g., 3:45" disabled={isUploading}/>
+                <InputField label="Duration" name="duration" value={currentItem.duration || ''} onChange={handleChange} placeholder="e.g., 3:45" disabled={isProcessing}/>
             )}
-            {(type === 'Music' || type === 'Custom Audio') && <InputField label="Artist" name="artist" value={(currentItem as MusicContent | CustomAudioContent).artist || ''} onChange={handleChange} placeholder="Artist Name" disabled={isUploading} />}
-            {type === 'Music' && <InputField label="Genre" name="genre" value={(currentItem as MusicContent).genre || ''} onChange={handleChange} placeholder="Music Genre" disabled={isUploading} />}
-            {type === 'RSS Feed' && <InputField label="Source URL" name="source" value={(currentItem as RssFeedContent).source || ''} onChange={handleChange} placeholder="https://..." disabled={isUploading} />}
-            {type === 'Relay Stream' && <InputField label="Stream URL" name="url" value={(currentItem as RelayStreamContent).url || ''} onChange={handleChange} placeholder="https://your-stream.com/live" disabled={isUploading} />}
+            {(type === 'Music' || type === 'Custom Audio') && <InputField label="Artist" name="artist" value={(currentItem as MusicContent | CustomAudioContent).artist || ''} onChange={handleChange} placeholder="Artist Name" disabled={isProcessing} />}
+            {type === 'Music' && <InputField label="Genre" name="genre" value={(currentItem as MusicContent).genre || ''} onChange={handleChange} placeholder="Music Genre" disabled={isProcessing} />}
+            {type === 'RSS Feed' && <InputField label="Source URL" name="source" value={(currentItem as RssFeedContent).source || ''} onChange={handleChange} placeholder="https://..." disabled={isProcessing} />}
+            {type === 'Relay Stream' && <InputField label="Stream URL" name="url" value={(currentItem as RelayStreamContent).url || ''} onChange={handleChange} placeholder="https://your-stream.com/live" disabled={isProcessing} />}
             
             {type === 'Article' && (
-                <InputField label="Article Body" name="content" value={(currentItem as ArticleContent).content || ''} onChange={handleChange} placeholder="Write your article here, or generate one in the AI Content Studio." isTextarea disabled={isUploading} />
+                <InputField label="Article Body" name="content" value={(currentItem as ArticleContent).content || ''} onChange={handleChange} placeholder="Write your article here, or generate one in the AI Content Studio." isTextarea disabled={isProcessing} />
             )}
 
              {type === 'Music' && (
                 <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                      <h4 className="font-semibold text-gray-800 dark:text-white">Music Details (for AI Announcer)</h4>
                      <div className="grid grid-cols-2 gap-4">
-                        <InputField label="Album" name="album" value={(currentItem as MusicContent).album || ''} onChange={handleChange} placeholder="Album Name" disabled={isUploading} />
-                        <InputField label="Year" name="year" value={(currentItem as MusicContent).year || ''} onChange={handleChange} placeholder="Release Year" disabled={isUploading} />
+                        <InputField label="Album" name="album" value={(currentItem as MusicContent).album || ''} onChange={handleChange} placeholder="Album Name" disabled={isProcessing} />
+                        <InputField label="Year" name="year" value={(currentItem as MusicContent).year || ''} onChange={handleChange} placeholder="Release Year" disabled={isProcessing} />
                      </div>
-                     <InputField label="Mood/Tags" name="mood" value={(currentItem as MusicContent).mood || ''} onChange={handleChange} placeholder="e.g., Summer Anthem, 80s" disabled={isUploading} />
-                     <InputField label="Fun Fact / Note" name="notes" value={(currentItem as MusicContent).notes || ''} onChange={handleChange} placeholder="e.g., Featured in the movie 'Drive'" isTextarea disabled={isUploading} />
+                     <InputField label="Fun Fact / Note" name="notes" value={(currentItem as MusicContent).notes || ''} onChange={handleChange} placeholder="e.g., Featured in the movie 'Drive'" isTextarea disabled={isProcessing} />
+                     {(currentItem as MusicContent).bpm && (
+                        <div className="p-4 border dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-900/50">
+                            <h4 className="text-sm font-semibold text-gray-800 dark:text-white mb-2">AI Analysis</h4>
+                            <div className="grid grid-cols-3 gap-4 text-sm">
+                                <div><span className="font-medium text-gray-500">BPM:</span> {(currentItem as MusicContent).bpm || 'N/A'}</div>
+                                <div><span className="font-medium text-gray-500">Key:</span> {(currentItem as MusicContent).key || 'N/A'}</div>
+                                <div><span className="font-medium text-gray-500">Energy:</span> {(currentItem as MusicContent).energy ? `${(currentItem as MusicContent).energy}/10` : 'N/A'}</div>
+                                <div className="col-span-3"><span className="font-medium text-gray-500">Moods:</span> {((currentItem as MusicContent).moodTags || []).join(', ') || 'N/A'}</div>
+                            </div>
+                        </div>
+                     )}
                 </div>
             )}
 
             <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <h4 className="font-semibold text-gray-800 dark:text-white">AI Announcement</h4>
-                <ToggleSwitch label="Use AI Announcer" enabled={!!currentItem.useAiAnnouncer} onChange={(val) => handleToggle('useAiAnnouncer', val)} disabled={isUploading} />
+                <ToggleSwitch label="Use AI Announcer" enabled={!!currentItem.useAiAnnouncer} onChange={(val) => handleToggle('useAiAnnouncer', val)} disabled={isProcessing} />
                 {currentItem.useAiAnnouncer && (
                     <div className="space-y-4 pl-4 border-l-2 border-gray-200 dark:border-gray-600">
                         <div>
                             <label htmlFor="announcerVoice" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Announcer Voice</label>
-                            <select id="announcerVoice" name="announcerVoice" value={currentItem.announcerVoice || 'AI-David'} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700" disabled={isUploading}>
+                            <select id="announcerVoice" name="announcerVoice" value={currentItem.announcerVoice || 'AI-David'} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700" disabled={isProcessing}>
                                 <optgroup label="Standard Voices">
                                     <option>AI-David</option>
                                     <option>AI-Sarah</option>
@@ -273,13 +351,13 @@ Keep the announcement under 45 seconds when read aloud.`;
                             </select>
                         </div>
                         <div>
-                             <InputField label="Predefined Announcement" name="predefinedAnnouncement" value={currentItem.predefinedAnnouncement || ''} onChange={handleChange} placeholder="Leave blank for AI-generated announcement" isTextarea disabled={isUploading} />
+                             <InputField label="Predefined Announcement" name="predefinedAnnouncement" value={currentItem.predefinedAnnouncement || ''} onChange={handleChange} placeholder="Leave blank for AI-generated announcement" isTextarea disabled={isProcessing} />
                              {type === 'Music' && (
                                 <div className="flex justify-end -mt-2">
                                     <button
                                         type="button"
                                         onClick={handleGenerateAnnouncement}
-                                        disabled={isGeneratingAnnouncement || isUploading || !(currentItem as MusicContent).artist || !(currentItem as MusicContent).title}
+                                        disabled={isGeneratingAnnouncement || isProcessing || !(currentItem as MusicContent).artist || !(currentItem as MusicContent).title}
                                         className="flex items-center px-3 py-1 text-xs bg-purple-100 text-purple-700 font-semibold rounded-lg shadow-sm hover:bg-purple-200 dark:bg-purple-900/50 dark:text-purple-300 dark:hover:bg-purple-900 focus:outline-none disabled:opacity-50"
                                     >
                                         <SparklesIcon className="h-3 w-3 mr-1.5" />
@@ -288,13 +366,13 @@ Keep the announcement under 45 seconds when read aloud.`;
                                 </div>
                              )}
                         </div>
-                        <ToggleSwitch label="Add background music to announcement" enabled={!!currentItem.announcementWithBackgroundMusic} onChange={(val) => handleToggle('announcementWithBackgroundMusic', val)} disabled={isUploading} />
+                        <ToggleSwitch label="Add background music to announcement" enabled={!!currentItem.announcementWithBackgroundMusic} onChange={(val) => handleToggle('announcementWithBackgroundMusic', val)} disabled={isProcessing} />
                     </div>
                 )}
             </div>
             <div className="flex justify-end pt-4 space-x-2">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed" disabled={isUploading}>Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400 dark:disabled:bg-blue-800 disabled:cursor-not-allowed" disabled={isUploading}>{isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Save Content'}</button>
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed" disabled={isProcessing}>Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400 dark:disabled:bg-blue-800 disabled:cursor-not-allowed" disabled={isProcessing}>{buttonText}</button>
             </div>
         </form>
     );

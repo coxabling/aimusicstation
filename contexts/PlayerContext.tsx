@@ -1,3 +1,6 @@
+
+
+
 import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect, useRef } from 'react';
 // FIX: Import StreamStatus to use it in the context.
 import { ContentItem, isPlayableContent, AudioContent, MusicContent, AdContent, CustomAudioContent, Station, Campaign, Clockwheel, Webhook, User, StreamStatus } from '../types';
@@ -157,7 +160,8 @@ async function generateAnnouncementText(item: ContentItem, previousItem: Content
                 contentDetails = `The next song is "${item.title}" by "${item.artist}".
                 Album: ${item.album || 'N/A'}
                 Year: ${item.year || 'N/A'}
-                Mood/Tags: ${item.mood || 'N/A'}
+                // FIX: Property 'mood' does not exist on type 'MusicContent'. Use 'moodTags' instead.
+                Mood/Tags: ${item.moodTags?.join(', ') || 'N/A'}
                 Note: ${item.notes || 'N/A'}`;
                 break;
             case 'Ad':
@@ -246,7 +250,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [isAiProgramDirectorActive, setIsAiProgramDirectorActive] = useState(false);
     // FIX: Add state for stream status and live DJ mode.
     const [streamStatus, setStreamStatus] = useState<StreamStatus>('offline');
-    const wasPlayingBeforeLiveRef = useRef(false);
+    const preLivePlaybackStateRef = useRef<PlaybackState>('stopped');
 
     const [isGeneratingAnnouncements, setIsGeneratingAnnouncements] = useState(false);
     const [announcementGenerationProgress, setAnnouncementGenerationProgress] = useState(0);
@@ -280,6 +284,20 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         };
         loadWebhooks();
     }, [currentUser]);
+
+    // Cleanup blob URLs on unmount
+    useEffect(() => {
+        return () => {
+            audioRefs.forEach(ref => {
+                if (ref.current) {
+                    const blobSrc = ref.current.getAttribute('data-blob-src');
+                    if (blobSrc) {
+                        URL.revokeObjectURL(blobSrc);
+                    }
+                }
+            });
+        };
+    }, []);
 
     const postToWebhook = async (webhook: Webhook, item: ContentItem) => {
         if (item.type !== 'Music') return; // Only post for music tracks
@@ -414,6 +432,45 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         playNext(isCrossfadingRef.current);
     }, [playNext]);
 
+    const playContentDirectly = useCallback(async (player: HTMLAudioElement, item: (MusicContent | AdContent | CustomAudioContent) & { url: string }) => {
+        if (!player || !item || !item.url) {
+            if (item) console.error(`Skipping track due to invalid URL: ${item.title}`, item);
+            onTrackEnd();
+            return;
+        }
+
+        const errorHandler = (event: Event) => {
+            const mediaError = (event.target as HTMLAudioElement).error;
+            console.error(`Audio error for "${item.title}" (ID: ${item.id}):`, mediaError?.message, `(Code: ${mediaError?.code})`);
+            onTrackEnd();
+        };
+        
+        const playAudioFromSrc = () => {
+            player.removeEventListener('error', errorHandler);
+            player.addEventListener('error', errorHandler, { once: true });
+            player.play().catch(error => {
+                if (error.name !== 'AbortError') {
+                    console.error(`Audio play failed for "${item.title}":`, error);
+                    onTrackEnd();
+                }
+            });
+        };
+
+        // Reverting to direct URL assignment. The <audio> tag is often better at handling
+        // cross-origin media requests than the fetch API in some sandboxed environments.
+        // This avoids the "Failed to fetch" error while hoping the new audio sources
+        // don't trigger the old "no supported sources" error.
+        if (player.src !== item.url) {
+            player.src = item.url;
+            player.load();
+            player.addEventListener('canplaythrough', playAudioFromSrc, { once: true });
+        } else {
+            // If src is already set (e.g., for pause/resume), just ensure it plays.
+            playAudioFromSrc();
+        }
+    }, [onTrackEnd]);
+
+
     const handleTimeUpdate = useCallback(() => {
         const player = getActivePlayer();
         if (!player || isSeeking.current) return;
@@ -436,47 +493,14 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
             if (nextPlayer) {
                 nextPlayer.volume = 0;
-                nextPlayer.play().catch(e => console.error("Next player failed to play:", e));
-                fadeVolume(nextPlayer, isMuted ? 0 : volume, 1500);
+                playContentDirectly(nextPlayer, nextItem as any).then(() => {
+                    fadeVolume(nextPlayer, isMuted ? 0 : volume, 1500);
+                });
             }
             playNext(true);
         }
-    }, [currentQueueIndex, playoutQueue, isMuted, volume, playNext, fadeVolume]);
+    }, [currentQueueIndex, playoutQueue, isMuted, volume, playNext, fadeVolume, playContentDirectly]);
     
-    const playContentDirectly = useCallback((player: HTMLAudioElement, item: (MusicContent | AdContent | CustomAudioContent) & { url: string }) => {
-        if (!player || !item || !item.url) {
-            if (item) {
-                console.error(`Skipping track due to invalid URL: ${item.title}`, item);
-            }
-            onTrackEnd(); // Skip to next track
-            return;
-        }
-    
-        const errorHandler = (event: Event) => {
-            const mediaError = (event.target as HTMLAudioElement).error;
-            console.error(`Audio error for "${item.title}" (ID: ${item.id}):`, mediaError?.message, `(Code: ${mediaError?.code})`);
-            onTrackEnd();
-        };
-    
-        const playPromise = () => {
-            player.removeEventListener('error', errorHandler); // Clean up previous error listener
-            player.addEventListener('error', errorHandler, { once: true });
-            player.play().catch(error => {
-                if (error.name !== 'AbortError') {
-                    console.error(`Audio play failed for "${item.title}":`, error);
-                }
-            });
-        };
-    
-        if (player.src !== item.url) {
-            player.src = item.url;
-            player.load();
-            player.addEventListener('canplaythrough', playPromise, { once: true });
-        } else {
-            playPromise();
-        }
-    }, [onTrackEnd]);
-
     const playArticleTTS = useCallback((buffer: AudioBuffer, offset: number) => {
         if (announcementSourceRef.current) {
             announcementSourceRef.current.onended = null;
@@ -710,8 +734,9 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
             const nextItem = playoutQueue[currentQueueIndex + 1];
             if (nextPlayer && nextItem && isPlayableContent(nextItem)) {
-                nextPlayer.src = nextItem.url;
-                nextPlayer.load();
+                // Preload next track
+                playContentDirectly(nextPlayer, nextItem as any);
+                nextPlayer.pause();
             }
         };
 
@@ -745,6 +770,11 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             audioRefs.forEach(ref => {
                 if (ref.current) {
                     ref.current.pause();
+                    const blobSrc = ref.current.getAttribute('data-blob-src');
+                    if (blobSrc) {
+                        URL.revokeObjectURL(blobSrc);
+                        ref.current.removeAttribute('data-blob-src');
+                    }
                     if (ref.current.src) {
                         ref.current.removeAttribute('src');
                         ref.current.load();
@@ -1080,26 +1110,29 @@ Return your choice ONLY as a JSON object with a single key "id". Example: {"id":
     }, [isAiProgramDirectorActive, currentUser, deductCredits, contentItems, audioContentItems, addToast, currentQueueIndex]);
 
     const startLiveDJBroadcast = useCallback(() => {
+        // Save the current playback state before pausing for the live session.
+        preLivePlaybackStateRef.current = playbackState;
         if (playbackState === 'playing') {
-            wasPlayingBeforeLiveRef.current = true;
-            togglePlayPause();
-        } else {
-            wasPlayingBeforeLiveRef.current = false;
+            togglePlayPause(); // This will set the state to 'paused'.
         }
         setStreamStatus('live-dj');
         addToast("Live DJ broadcast has started! Auto DJ is paused.", "info");
     }, [playbackState, togglePlayPause, addToast]);
 
     const endLiveDJBroadcast = useCallback(() => {
-        // If the queue has items, it's auto-dj, otherwise it's offline.
+        // Restore the appropriate stream status.
         setStreamStatus(playoutQueue.length > 0 && currentQueueIndex !== -1 ? 'auto-dj' : 'offline');
-        if (wasPlayingBeforeLiveRef.current && playbackState !== 'playing') {
-            togglePlayPause();
+        
+        // If the Auto DJ was playing before the live session began, resume it.
+        if (preLivePlaybackStateRef.current === 'playing' && playbackState !== 'playing') {
+            togglePlayPause(); // This will resume playback.
             addToast("Resuming Auto DJ.", "info");
         } else {
             addToast("Live DJ has disconnected.", "info");
         }
-        wasPlayingBeforeLiveRef.current = false;
+        
+        // Reset the saved state for the next session.
+        preLivePlaybackStateRef.current = 'stopped';
     }, [playbackState, togglePlayPause, addToast, playoutQueue.length, currentQueueIndex]);
 
     const value = { 
