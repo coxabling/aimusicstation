@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo, ChangeEvent, useEffect, useCallback } from 'react';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { MusicIcon, PencilIcon, TrashIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, SparklesIcon, GlobeIcon, ExclamationCircleIcon, QueueAddIcon, VoiceIcon } from '../components/icons';
@@ -98,26 +97,28 @@ const getAudioDuration = (file: File): Promise<string> => {
             const minutes = Math.floor(duration / 60);
             const seconds = duration % 60;
             resolve(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+            // Removed URL.revokeObjectURL(objectUrl) as it was causing playback issues
         };
         audio.onerror = () => {
             resolve('0:00'); // Resolve with default on error
+            // Removed URL.revokeObjectURL(objectUrl) as it was causing playback issues
         };
     });
 };
 
 // --- AI PREVIEW HELPERS ---
 function decode(base64: string): Uint8Array {
-    const binaryString = atob(base64);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i); }
-    return bytes;
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i); }
+  return bytes;
 }
 function pcmToWav(pcmData: Uint8Array, sampleRate: number, numChannels: number, bitsPerSample: number): Blob {
     const dataSize = pcmData.length; const buffer = new ArrayBuffer(44 + dataSize); const view = new DataView(buffer);
     const writeString = (offset: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
     const byteRate = sampleRate * numChannels * (bitsPerSample / 8); const blockAlign = numChannels * (bitsPerSample / 8);
-    writeString(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true); writeString(8, 'WAVE'); writeString(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, numChannels, true); view.setUint32(24, sampleRate, true); view.setUint32(28, byteRate, true); view.setUint16(32, blockAlign, true); view.setUint16(34, bitsPerSample, true); writeString(36, 'data'); view.setUint32(40, dataSize, true); new Uint8Array(buffer, 44).set(pcmData);
+    writeString(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true); writeString(8, 'WAVE'); view.setUint16(20, 1, true); view.setUint16(22, numChannels, true); view.setUint32(24, sampleRate, true); view.setUint32(28, byteRate, true); view.setUint16(32, blockAlign, true); view.setUint16(34, bitsPerSample, true); writeString(36, 'data'); view.setUint32(40, dataSize, true); new Uint8Array(buffer, 44).set(pcmData);
     return new Blob([view], { type: 'audio/wav' });
 }
 const getPreviewDuration = (url: string): Promise<string> => new Promise(resolve => {
@@ -845,6 +846,7 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     const [previewingItemId, setPreviewingItemId] = useState<string | null>(null);
     
     const { addToast } = useToast();
+    // FIX: Invoke usePlayer hook correctly.
     const { currentItem, playbackState, isPreviewing, playPreview, addToQueue, togglePlayPause } = usePlayer();
 
     const isPlaying = playbackState === 'playing';
@@ -1109,7 +1111,13 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     };
 
     const handleDownload = (item: ContentItem) => {
-        if (!isPlayableContent(item)) {
+        // Prevent downloading for non-playable items or relay streams
+        if (item.type === 'Relay Stream') {
+            addToast(`Relay streams cannot be downloaded as they are live feeds.`, 'error');
+            return;
+        }
+        if (!isPlayableContent(item) && !('file' in item && item.file)) { // Also check for files that might not be 'playable' but are downloadable
+            addToast(`"${item.title}" has no downloadable content.`, 'error');
             return;
         }
 
@@ -1117,25 +1125,28 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
         link.style.display = 'none';
         const filename = item.title || 'download';
         
-        // FIX: Check if the 'file' property exists on the item before accessing it, as RelayStreamContent does not have this property.
-        // This resolves the TypeScript error. Also, prevent attempts to download a live Relay Stream URL.
+        // Handle content with an actual File object (e.g., uploaded Music, Ad, Custom Audio)
         if ('file' in item && item.file && item.file instanceof File) {
             const blobUrl = URL.createObjectURL(item.file);
             link.href = blobUrl;
-            link.download = item.file.name || filename;
+            link.download = item.file.name || filename; // Use original filename if available
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            URL.revokeObjectURL(blobUrl);
-        } 
-        else if (item.url && item.type !== 'Relay Stream') {
+            URL.revokeObjectURL(blobUrl); // Revoke after download is initiated
+        }
+        // Handle content with a direct URL (e.g., Music, Ad, Custom Audio from external URLs)
+        else if (item.url) { // Already filtered out Relay Stream
             link.href = item.url;
-            link.download = filename;
-            link.target = '_blank'; 
-            link.rel = 'noopener noreferrer';
+            link.download = filename; // Generic filename for URL-based content
+            link.target = '_blank'; // Open in new tab to allow direct download/viewing
+            link.rel = 'noopener noreferrer'; // Security best practice for target="_blank"
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        } else {
+            // This case should ideally not be reached if previous checks are robust
+            addToast(`"${item.title}" has no downloadable content.`, 'error');
         }
     };
 

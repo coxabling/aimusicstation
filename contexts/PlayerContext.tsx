@@ -1,9 +1,8 @@
 
 
-
 import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect, useRef } from 'react';
 // FIX: Import StreamStatus to use it in the context.
-import { ContentItem, isPlayableContent, AudioContent, MusicContent, AdContent, CustomAudioContent, Station, Campaign, Clockwheel, Webhook, User, StreamStatus } from '../types';
+import { ContentItem, isPlayableContent, AudioContent, MusicContent, AdContent, CustomAudioContent, Station, Campaign, Clockwheel, Webhook, User, StreamStatus, RelayStreamContent } from '../types';
 import { useContent } from './ContentContext';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { generateWithRetry, handleAiError } from '../services/ai';
@@ -160,9 +159,8 @@ async function generateAnnouncementText(item: ContentItem, previousItem: Content
                 contentDetails = `The next song is "${item.title}" by "${item.artist}".
                 Album: ${item.album || 'N/A'}
                 Year: ${item.year || 'N/A'}
-                // FIX: Property 'mood' does not exist on type 'MusicContent'. Use 'moodTags' instead.
-                Mood/Tags: ${item.moodTags?.join(', ') || 'N/A'}
-                Note: ${item.notes || 'N/A'}`;
+                Mood/Tags: ${(item as MusicContent).moodTags?.join(', ') || 'N/A'}
+                Note: ${(item as MusicContent).notes || 'N/A'}`;
                 break;
             case 'Ad':
                  contentDetails = `The next item is an advertisement titled "${item.title}".`;
@@ -177,7 +175,8 @@ async function generateAnnouncementText(item: ContentItem, previousItem: Content
 
         prompt += `\nHere are the details:\n${contentDetails}`;
         
-        prompt += `\nWrite the announcement in a way that sounds natural and engaging for a radio broadcast. The text itself should convey the intended emotion and energy, without using special cues like parentheses. For example, instead of writing "(Excitedly) Here's the next song!", you should write something like "Get ready for this next one! It's a banger!". Keep the announcement under 20 seconds when read aloud.`;
+        prompt += `\nWrite the announcement in a way that sounds natural and engaging for a radio broadcast. The text itself should convey the intended emotion and energy, without using special cues like parentheses. For example, instead of writing "(Smoothly) Here is...", you should write something like "And now, let's ease into...".
+Keep the announcement under 20 seconds when read aloud.`;
         
         const generateContentRequest: any = { model: 'gemini-2.5-flash', contents: prompt };
         
@@ -296,6 +295,13 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     }
                 }
             });
+            // FIX: Ensure AudioContext for announcements is closed on unmount
+            if (announcementAudioContextRef.current) {
+                if (announcementAudioContextRef.current.state !== 'closed') {
+                    announcementAudioContextRef.current.close().catch(e => console.error("Error closing AudioContext on unmount:", e));
+                }
+                announcementAudioContextRef.current = null;
+            }
         };
     }, []);
 
@@ -424,6 +430,8 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 return nextIndex;
             }
             setPlaybackState('stopped');
+            // FIX: Set stream status when broadcast ends
+            setStreamStatus('offline');
             return -1;
         });
     }, [isPreviewing, playoutQueue.length]);
@@ -432,43 +440,48 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         playNext(isCrossfadingRef.current);
     }, [playNext]);
 
-    const playContentDirectly = useCallback(async (player: HTMLAudioElement, item: (MusicContent | AdContent | CustomAudioContent) & { url: string }) => {
+    const playContentDirectly = useCallback(async (player: HTMLAudioElement, item: (MusicContent | AdContent | CustomAudioContent | RelayStreamContent) & { url: string }) => {
         if (!player || !item || !item.url) {
-            if (item) console.error(`Skipping track due to invalid URL: ${item.title}`, item);
-            onTrackEnd();
+            if (item) console.error(`Skipping track due to invalid/missing URL: ${item.title || item.id}`, item);
+            onTrackEnd(); // Move to the next track if current is invalid
             return;
         }
 
         const errorHandler = (event: Event) => {
             const mediaError = (event.target as HTMLAudioElement).error;
-            console.error(`Audio error for "${item.title}" (ID: ${item.id}):`, mediaError?.message, `(Code: ${mediaError?.code})`);
+            console.error(`Audio error for "${item.title}" (ID: ${item.id}):`, mediaError?.message, `(Code: ${mediaError?.code})`, player.src);
+            addToast(`Failed to play "${item.title}". Skipping track.`, 'error');
             onTrackEnd();
         };
         
-        const playAudioFromSrc = () => {
-            player.removeEventListener('error', errorHandler);
-            player.addEventListener('error', errorHandler, { once: true });
-            player.play().catch(error => {
-                if (error.name !== 'AbortError') {
-                    console.error(`Audio play failed for "${item.title}":`, error);
-                    onTrackEnd();
-                }
-            });
-        };
+        // Ensure we only have one error listener per player per track attempt
+        player.removeEventListener('error', errorHandler);
+        player.addEventListener('error', errorHandler, { once: true });
 
-        // Reverting to direct URL assignment. The <audio> tag is often better at handling
-        // cross-origin media requests than the fetch API in some sandboxed environments.
-        // This avoids the "Failed to fetch" error while hoping the new audio sources
-        // don't trigger the old "no supported sources" error.
+        // Only update src if it's different to avoid unnecessary network requests and potential browser issues
         if (player.src !== item.url) {
             player.src = item.url;
-            player.load();
-            player.addEventListener('canplaythrough', playAudioFromSrc, { once: true });
-        } else {
-            // If src is already set (e.g., for pause/resume), just ensure it plays.
-            playAudioFromSrc();
+            player.load(); // Request new data if src changed
         }
-    }, [onTrackEnd]);
+
+        // Attempt to play. Catch is crucial for Promise rejections (e.g., user gesture needed, AbortError)
+        player.play().catch(error => {
+            if (error.name === 'AbortError') {
+                // This is often harmless, e.g., if playback is interrupted by another play request or manual stop
+                // or if it's a preloading player that got paused.
+                console.log(`Playback aborted for "${item.title}".`);
+            } else if (error.name === 'NotAllowedError') {
+                // Browser policy preventing autoplay without user interaction
+                console.error(`Autoplay prevented for "${item.title}". User interaction needed.`, error);
+                addToast('Autoplay prevented. Please interact with the player to start playback.', 'info');
+                setPlaybackState('paused'); // Pause so user can manually resume
+            } else {
+                console.error(`Audio play failed for "${item.title}":`, error);
+                // Let the 'error' event listener handle calling onTrackEnd for more critical errors.
+                // Avoid calling onTrackEnd twice if an actual media error also fires.
+            }
+        });
+    }, [onTrackEnd, addToast]);
 
 
     const handleTimeUpdate = useCallback(() => {
@@ -675,7 +688,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 if (isArticleForTTS) {
                     const canProceed = await deductCredits(1, 'Article TTS Playout');
                     if (!canProceed) {
-                        console.warn("Insufficient credits for article TTS.");
+                        console.warn("Insufficient credits for article TTS. Using fallback timer.");
                         runTimerFallback('1:00');
                     } else {
                         try {
@@ -789,6 +802,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 announcementSourceRef.current = null;
             }
             if (announcementAudioContextRef.current) {
+                // FIX: Check if context is already closed before attempting to close
                 if (announcementAudioContextRef.current.state !== 'closed') {
                     announcementAudioContextRef.current.close().catch(e => console.error("Error closing AudioContext:", e));
                 }
@@ -801,8 +815,8 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             nonAudioTimerRef.current = null;
             fadeIntervalRef.current = null;
 
-            isCrossfadingRef.current = false;
-            isDuckingRef.current = false;
+            isCrossfadingRef.current = false; // FIX: Reset crossfade state
+            isDuckingRef.current = false;     // FIX: Reset ducking state
         }
         setIsPreviewing(false);
         setPreviewItem(null);
@@ -983,6 +997,8 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 if (indexToRemove === prevIndex) {
                     if (prevIndex >= newQueue.length) {
                         setPlaybackState('stopped');
+                        // FIX: Set stream status when broadcast ends
+                        setStreamStatus('offline');
                         return -1;
                     }
                     setCurrentTime(0);
@@ -1016,6 +1032,8 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (playbackState === 'stopped' && currentQueueIndex === -1) {
                 setCurrentQueueIndex(prevQueue.length);
                 setPlaybackState('playing');
+                // FIX: Set stream status when starting broadcast
+                setStreamStatus('auto-dj');
                 setCurrentTime(0);
             }
             return newQueue;
@@ -1051,7 +1069,9 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
 
         const canProceed = await deductCredits(5, 'AI Program Director Suggestion');
-        if (!canProceed) return;
+        if (!canProceed) {
+            return;
+        }
 
         try {
             const allMusic = [...contentItems, ...audioContentItems].filter(item => item.type === 'Music');
@@ -1073,7 +1093,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 Your task is to pick one similar song from the library to play next. The new song should match the genre and mood.
 Do not pick a song by the same artist if other options are available.
 Available songs: ${JSON.stringify(musicLibrary.slice(0, 100))}
-Return your choice ONLY as a JSON object with a single key "id". Example: {"id": "song_id_123"}`;
+Return ONLY the ID of the best match as a JSON object like {"id": "song_id_123"}. If no good match is found, return {"id": null}.`;
 
             const response = await generateWithRetry({ model: 'gemini-2.5-flash', contents: prompt });
             const result = JSON.parse(response.text.replace(/```json|```/g, '').trim());
@@ -1106,6 +1126,8 @@ Return your choice ONLY as a JSON object with a single key "id". Example: {"id":
             }
         } catch (error) {
             handleAiError(error, addToast);
+        } finally {
+            addToast(`The AI Program Director couldn't find a suitable song.`, 'error');
         }
     }, [isAiProgramDirectorActive, currentUser, deductCredits, contentItems, audioContentItems, addToast, currentQueueIndex]);
 

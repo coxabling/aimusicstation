@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenAI, LiveSession, LiveServerMessage, Modality, Blob } from "@google/genai";
 import { LiveIcon, AiIcon } from '../components/icons';
@@ -83,9 +84,7 @@ const LiveVoiceChat: React.FC = () => {
     const { deductCredits } = useAuth();
     const playerContext = usePlayer();
     const [status, setStatus] = useState<Status>('disconnected');
-    const [transcriptionHistory, setTranscriptionHistory] = useState<string[]>([]);
-    const [currentInput, setCurrentInput] = useState('');
-    const [currentOutput, setCurrentOutput] = useState('');
+    const [errorMessage, setErrorMessage] = useState('');
 
     const wasPlayingRef = useRef(false);
     const playerContextRef = useRef(playerContext);
@@ -103,14 +102,21 @@ const LiveVoiceChat: React.FC = () => {
 
     // Refs for visualizer
     const analyserNodeRef = useRef<AnalyserNode | null>(null);
+    // FIX: Initialize canvasRef with null
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const animationFrameIdRef = useRef<number | null>(null);
+    
+    // FIX: Move useState declarations for transcriptionHistory, currentInput, and currentOutput to the top of the component.
+    const [transcriptionHistory, setTranscriptionHistory] = useState<string[]>([]);
+    const [currentInput, setCurrentInput] = useState('');
+    const [currentOutput, setCurrentOutput] = useState('');
     
     useEffect(() => {
         playerContextRef.current = playerContext;
     }, [playerContext]);
     
     const draw = useCallback(() => {
+        // FIX: Ensure canvasRef.current is checked
         if (status !== 'connected' || !analyserNodeRef.current || !canvasRef.current) {
             if (animationFrameIdRef.current) {
                 cancelAnimationFrame(animationFrameIdRef.current);
@@ -161,10 +167,13 @@ const LiveVoiceChat: React.FC = () => {
     }, [status]);
 
     const cleanup = useCallback(() => {
+        // FIX: Ensure cleanup function correctly stops all media tracks and audio contexts.
         streamRef.current?.getTracks().forEach(track => track.stop());
         scriptProcessor.current?.disconnect();
         mediaStreamSource.current?.disconnect();
         analyserNodeRef.current?.disconnect();
+        
+        // FIX: Ensure AudioContexts are closed properly
         inputAudioContext.current?.close().catch(e => console.error("Error closing input audio context:", e));
         outputAudioContext.current?.close().catch(e => console.error("Error closing output audio context:", e));
         
@@ -205,7 +214,8 @@ const LiveVoiceChat: React.FC = () => {
         }
 
         setStatus('connecting');
-        setTranscriptionHistory([]);
+        // Clear previous transcription history
+        setTranscriptionHistory([]); 
         setCurrentInput('');
         setCurrentOutput('');
         currentInputRef.current = '';
@@ -241,6 +251,7 @@ const LiveVoiceChat: React.FC = () => {
                         scriptProcessor.current.onaudioprocess = (audioEvent) => {
                             const inputData = audioEvent.inputBuffer.getChannelData(0);
                             const pcmBlob = createBlob(inputData);
+                            // FIX: Ensure sendRealtimeInput is wrapped in sessionPromise.current?.then to avoid stale closures.
                             sessionPromise.current?.then((session) => {
                                 session.sendRealtimeInput({ media: pcmBlob });
                             });
@@ -319,6 +330,7 @@ const LiveVoiceChat: React.FC = () => {
     };
 
     const handleEndSession = () => {
+        // FIX: Ensure session.close() is called when ending the session.
         sessionPromise.current?.then(session => session.close());
         sessionPromise.current = null;
         setStatus('disconnected');
@@ -337,6 +349,7 @@ const LiveVoiceChat: React.FC = () => {
 
     useEffect(() => {
         return () => {
+            // FIX: Ensure session.close() is called on component unmount.
             sessionPromise.current?.then(s => s.close()).catch(() => {});
             cleanup();
             

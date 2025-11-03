@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Campaign, AdContent } from '../types';
 import * as db from '../services/db';
@@ -33,11 +35,11 @@ const getAudioDuration = (file: File): Promise<string> => {
             const minutes = Math.floor(duration / 60);
             const seconds = duration % 60;
             resolve(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-            // URL.revokeObjectURL(objectUrl); // This was causing the playback error
+            // Removed URL.revokeObjectURL(objectUrl) as it was causing playback issues
         };
         audio.onerror = () => {
             resolve('0:00'); // Resolve with default on error
-            // URL.revokeObjectURL(objectUrl); // This was causing the playback error
+            // Removed URL.revokeObjectURL(objectUrl) as it was causing playback issues
         };
     });
 };

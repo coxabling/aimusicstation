@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -39,11 +38,13 @@ import Billing from './pages/Billing';
 import ShowDesigner from './pages/ShowDesigner';
 import PodcastStudio from './pages/PodcastStudio';
 import WebsiteCMS from './pages/WebsiteCMS';
-import ControlRoom from './pages/ControlRoom';
-import CoPilot from './components/CoPilot';
+// Fix: CoPilot is a named export, not a default export.
+import { CoPilot } from './components/CoPilot';
 import LiveDJModal from './components/LiveDJModal';
+// Fix: Add missing import for ControlRoom.
+import ControlRoom from './pages/ControlRoom';
 
-export type Page = 'dashboard' | 'controlRoom' | 'settings' | 'azuracast' | 'shoutcast' | 'liquidsoap' | 'content' | 'audioContent' | 'contentVault' | 'aiContentStudio' | 'aiVoiceCloning' | 'showPrep' | 'playlists' | 'schedule' | 'analytics' | 'trafficWeather' | 'userManagement' | 'rssAutomation' | 'userProfile' | 'live' | 'help' | 'social' | 'audience' | 'integrations' | 'adManager' | 'billing' | 'showDesigner' | 'podcastStudio' | 'websiteCms';
+export type Page = 'dashboard' | 'controlRoom' | 'settings' | 'azuracast' | 'shoutcast' | 'liquidsoap' | 'content' | 'audioContent' | 'contentVault' | 'aiContentStudio' | 'aiVoiceCloning' | 'showPrep' | 'podcastStudio' | 'playlists' | 'schedule' | 'analytics' | 'trafficWeather' | 'userManagement' | 'rssAutomation' | 'userProfile' | 'live' | 'help' | 'social' | 'audience' | 'integrations' | 'adManager' | 'billing' | 'showDesigner' | 'websiteCms';
 export type Theme = 'light' | 'dark';
 export type Language = 'en' | 'es' | 'fr';
 
@@ -224,7 +225,7 @@ const translations: Record<Language, Record<string, string>> = {
     'pageTitles.controlRoom': 'Salle de Contrôle',
     'pageTitles.settings': 'Paramètres de la Station',
     'pageTitles.audioContent': 'Contenu Audio',
-    'pageTitles.aiContentStudio': 'Studio de Contenu IA',
+    'pageTitles.aiContentStudio': 'Studio de Contenido IA',
     'pageTitles.playlists': 'Playlists',
     'pageTitles.schedule': 'Programme',
     'pageTitles.analytics': 'Analyses',
@@ -239,10 +240,10 @@ const translations: Record<Language, Record<string, string>> = {
     'sidebar.azuracast': 'Lier Azuracast',
     'sidebar.shoutcast': 'Lier Shoutcast',
     'sidebar.liquidsoap': 'Liquidsoap',
-    'sidebar.content': 'Contenu',
-    'sidebar.audioContent': 'Contenu Audio',
-    'sidebar.contentVault': 'Coffre de Contenu',
-    'sidebar.aiContentStudio': 'Studio Contenu IA',
+    'sidebar.content': 'Contenido',
+    'sidebar.audioContent': 'Contenido de Audio',
+    'sidebar.contentVault': 'Coffre de Contenido',
+    'sidebar.aiContentStudio': 'Studio Contenido IA',
     'sidebar.aiVoiceCloning': 'Clonage Vocal IA',
     'sidebar.showPrep': 'Préparation d\'Émission',
     'sidebar.podcastStudio': 'Studio de Podcast',
@@ -251,7 +252,7 @@ const translations: Record<Language, Record<string, string>> = {
     'sidebar.audience': 'Audience',
     'sidebar.integrations': 'Intégrations',
     'sidebar.websiteCms': 'CMS Site Web',
-    'sidebar.rssAutomation': 'Automatisation RSS',
+    'sidebar.rssAutomation': 'Automatización RSS',
     'sidebar.playlists': 'Playlists',
     'sidebar.showDesigner': 'Concepteur d\'Émission',
     'sidebar.schedule': 'Programme',
@@ -463,6 +464,7 @@ const AppContent: React.FC = () => {
 
     switch (activePage) {
       case 'dashboard': return <Dashboard setActivePage={setActivePage} />;
+      // Fix: Use the imported ControlRoom component.
       case 'controlRoom': return <ControlRoom />;
       case 'settings': return <StationSettings station={stationSettings} onSave={saveStationSettings} />;
       case 'azuracast': return <AzuracastLink />;

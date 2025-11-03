@@ -65,7 +65,8 @@ const LiveDJModal: React.FC<LiveDJModalProps> = ({ isOpen, onClose, theme }) => 
     const cleanup = useCallback(() => {
         if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
         streamRef.current?.getTracks().forEach(track => track.stop());
-        audioContextRef.current?.close().catch(() => {});
+        // FIX: Ensure AudioContext is closed properly.
+        audioContextRef.current?.close().catch(e => console.error("Error closing AudioContext:", e));
         streamRef.current = null;
         audioContextRef.current = null;
         analyserNodeRef.current = null;

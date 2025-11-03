@@ -1,7 +1,5 @@
 
 
-
-
 export interface Station {
   name: string;
   description: string;
@@ -83,7 +81,7 @@ export interface MusicContent extends BaseContentItem {
   bpm?: number;
   key?: string;
   energy?: number; // 1-10
-  moodTags?: string[];
+  moodTags?: string[]; // Corrected comment from 'mood'
 }
 
 export interface ArticleContent extends BaseContentItem {

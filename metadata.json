@@ -3,6 +3,7 @@
   "description": "A comprehensive, easy-to-navigate user platform for the AI music station. This guide provides detailed explanations of all features, from initial station setup to advanced content scheduling and analytics.",
   "requestFramePermissions": [
     "geolocation",
-    "microphone"
+    "microphone",
+    "camera"
   ]
 }

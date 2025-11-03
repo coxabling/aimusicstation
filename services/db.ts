@@ -1,8 +1,9 @@
+
 import type { ContentItem, AudioContent, ArticleHistoryItem, SavedSchedule, Playlist, ClonedVoice, User, RssFeedSettings, SocialPost, Submission, Campaign, CreditUsageLog, Clockwheel, Webhook, AIReport } from '../types';
 
 const DB_NAME = 'ai-music-station-db';
 // Increment DB version to add new aiReports object store.
-const DB_VERSION = 14; // Increment version for schema change
+const DB_VERSION = 15; // Increment version for schema change
 const CONTENT_STORE = 'contentItems';
 const AUDIO_STORE = 'audioContent';
 const HISTORY_STORE = 'articleHistory';
@@ -116,37 +117,6 @@ export const seedInitialData = async () => {
     }
 };
 
-// --- Users ---
-export const getAllUsers = async (): Promise<User[]> => {
-    const db = await dbReady;
-    const tx = db.transaction(USERS_STORE, 'readonly');
-    return promisifyRequest(tx.objectStore(USERS_STORE).getAll());
-};
-
-export const getUsersByTenant = async (tenantId: string): Promise<User[]> => {
-    const db = await dbReady;
-    const tx = db.transaction(USERS_STORE, 'readonly');
-    const store = tx.objectStore(USERS_STORE);
-    const index = store.index('tenantId');
-    return promisifyRequest(index.getAll(tenantId));
-};
-
-export const getUser = async (id: string): Promise<User | undefined> => {
-    const db = await dbReady;
-    const tx = db.transaction(USERS_STORE, 'readonly');
-    return promisifyRequest(tx.objectStore(USERS_STORE).get(id));
-};
-
-export const saveUser = async (user: User): Promise<void> => {
-    const db = await dbReady;
-    const tx = db.transaction(USERS_STORE, 'readwrite');
-    await promisifyRequest(tx.objectStore(USERS_STORE).put(user));
-};
-
-export const deleteUser = (id: string, tenantId: string): Promise<void> => {
-    return deleteItems(USERS_STORE, [id], tenantId);
-};
-
 // --- Generic Tenant-Scoped Functions ---
 const getAllByTenant = async <T>(storeName: string, tenantId: string): Promise<T[]> => {
     const db = await dbReady;
@@ -242,6 +212,27 @@ const removeTracksFromAllPlaylists = async (trackIdsToRemove: string[], tenantId
         tx.onabort = () => reject(tx.error);
     });
 };
+
+// --- Users ---
+export const getAllUsers = async (): Promise<User[]> => {
+    const db = await dbReady;
+    const tx = db.transaction(USERS_STORE, 'readonly');
+    const store = tx.objectStore(USERS_STORE);
+    return promisifyRequest(store.getAll());
+};
+export const getUsersByTenant = (tenantId: string): Promise<User[]> => getAllByTenant(USERS_STORE, tenantId);
+export const getUser = (id: string): Promise<User | undefined> => {
+    return new Promise(async (resolve, reject) => {
+        const db = await dbReady;
+        const tx = db.transaction(USERS_STORE, 'readonly');
+        const store = tx.objectStore(USERS_STORE);
+        const request = store.get(id);
+        request.onsuccess = () => resolve(request.result as User);
+        request.onerror = () => reject(request.error);
+    });
+};
+export const saveUser = (user: User): Promise<void> => saveItem(USERS_STORE, user);
+export const deleteUser = (id: string, tenantId: string): Promise<void> => deleteItems(USERS_STORE, [id], tenantId);
 
 
 // --- Content Items ---
