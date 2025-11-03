@@ -4,7 +4,8 @@ import * as db from '../services/db';
 import { useAuth } from '../contexts/AuthContext';
 import { useContent } from '../contexts/ContentContext';
 import { useToast } from '../contexts/ToastContext';
-import { DollarSignIcon, PencilIcon, TrashIcon, PlusIcon, MusicIcon } from '../components/icons';
+import { usePlayer } from '../contexts/PlayerContext';
+import { DollarSignIcon, PencilIcon, TrashIcon, PlusIcon, MusicIcon, PlayCircleIcon, PauseCircleIcon } from '../components/icons';
 import Modal from '../components/Modal';
 import InputField from '../components/InputField';
 
@@ -201,12 +202,15 @@ const AdManager: React.FC<AdManagerProps> = ({ actionTrigger, clearActionTrigger
     const { currentUser } = useAuth();
     const { contentItems, addContentItem } = useContent();
     const { addToast } = useToast();
+    const { playPreview, currentItem, isPreviewing, playbackState } = usePlayer();
     
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
     const [isAdModalOpen, setIsAdModalOpen] = useState(false);
     const [editingCampaign, setEditingCampaign] = useState<Partial<Campaign> | null>(null);
+
+    const isPlaying = playbackState === 'playing';
 
     const loadCampaigns = useCallback(async () => {
         if (!currentUser) return;
@@ -359,6 +363,30 @@ const AdManager: React.FC<AdManagerProps> = ({ actionTrigger, clearActionTrigger
                                     </div>
                                     <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
                                         <div className="bg-brand-blue h-2.5 rounded-full" style={{ width: `${Math.min(100, ((campaign.impressions || 0) / (campaign.impressionGoal || 1)) * 100)}%` }}></div>
+                                    </div>
+                                </div>
+                                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Ad Creatives ({campaign.creativeIds.length})</h4>
+                                    <div className="space-y-2">
+                                        {adCreatives.filter(ad => campaign.creativeIds.includes(ad.id)).map(creative => {
+                                            const isCurrentlyPlaying = isPreviewing && currentItem?.id === creative.id && isPlaying;
+                                            return (
+                                                <div key={creative.id} className="flex items-center justify-between bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm">
+                                                    <div className="flex items-center space-x-3">
+                                                        <button onClick={() => playPreview(creative)} className="text-brand-blue hover:text-blue-700" title={isCurrentlyPlaying ? "Pause" : "Preview"}>
+                                                            {isCurrentlyPlaying ? <PauseCircleIcon /> : <PlayCircleIcon />}
+                                                        </button>
+                                                        <div>
+                                                            <p className="font-medium text-gray-900 dark:text-white">{creative.title}</p>
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">{creative.duration}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        {campaign.creativeIds.length === 0 && (
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">No creatives assigned to this campaign.</p>
+                                        )}
                                     </div>
                                 </div>
                             </div>

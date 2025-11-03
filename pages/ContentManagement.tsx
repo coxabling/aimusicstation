@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo, ChangeEvent, useEffect, useCallback } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { MusicIcon, PencilIcon, TrashIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, SparklesIcon, GlobeIcon, ExclamationCircleIcon, QueueAddIcon, VoiceIcon } from '../components/icons';
@@ -80,7 +79,8 @@ function pcmToWav(pcmData: Uint8Array, sampleRate: number, numChannels: number, 
     return new Blob([view], { type: 'audio/wav' });
 }
 const getPreviewDuration = (url: string): Promise<string> => new Promise(resolve => {
-    const audio = document.createElement('audio'); audio.preload = 'metadata';
+    const audio = document.createElement('audio');
+    audio.preload = 'metadata';
     audio.onloadedmetadata = () => {
         const duration = audio.duration;
         resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
