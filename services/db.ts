@@ -2,7 +2,7 @@ import type { ContentItem, AudioContent, ArticleHistoryItem, SavedSchedule, Play
 
 const DB_NAME = 'ai-music-station-db';
 // Increment DB version to add new announcementCache object store.
-const DB_VERSION = 14; // Increment version for schema change
+const DB_VERSION = 15; // Increment version for schema change
 const CONTENT_STORE = 'contentItems';
 const AUDIO_STORE = 'audioContent';
 const HISTORY_STORE = 'articleHistory';

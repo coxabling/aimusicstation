@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import * as db from '../services/db';
 import { Playlist, ContentItem, AudioContent } from '../types';
@@ -63,7 +62,8 @@ const ShowPrep: React.FC = () => {
         setGeneratedNotes('');
 
         try {
-            const tracklist = selectedPlaylistTracks.map((track, i) => `${i + 1}. "${'title' in track ? track.title : track.filename}" by ${track.artist}`).join('\n');
+            // Safely access artist property, as AudioContent allows it to be optional.
+            const tracklist = selectedPlaylistTracks.map((track, i) => `${i + 1}. "${'title' in track ? track.title : track.filename}" by ${('artist' in track && track.artist) ? track.artist : 'Unknown Artist'}`).join('\n');
 
             const prompt = `You are a professional and witty radio show producer. Your task is to create a "Show Prep" sheet for a radio host based on a given tracklist. The station's vibe is energetic and fun.
 
@@ -143,7 +143,8 @@ Format the entire output in clean, readable Markdown. Use headings for each sect
                             selectedPlaylistTracks.map((track, index) => (
                                 <div key={`${track.id}-${index}`} className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
                                     <p className="font-semibold text-sm text-gray-800 dark:text-white">{'title' in track ? track.title : track.filename}</p>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">{track.artist}</p>
+                                    {/* Safely access artist property, as AudioContent allows it to be optional. */}
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">{('artist' in track && track.artist) ? track.artist : 'Unknown Artist'}</p>
                                 </div>
                             ))
                         ) : (
