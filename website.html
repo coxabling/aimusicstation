@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,14 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI Music Station</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { font-family: sans-serif; }
-    </style>
+    <script>
+        // Configure Tailwind to use the class-based dark mode
+        tailwind.config = {
+            darkMode: 'class',
+             theme: {
+                extend: {
+                    colors: {
+                    'brand-blue': '#1a73e8',
+                    'gray-800': '#1f2937',
+                    'gray-900': '#111827',
+                    }
+                }
+            }
+        }
+    </script>
+    <script>
+      // Set theme on initial load
+      try {
+        if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      } catch (e) {
+        console.error('Could not access localStorage to set theme.');
+        document.documentElement.classList.add('dark'); // Default to dark mode on error
+      }
+    </script>
 </head>
-<body class="bg-gray-100 text-gray-800">
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 p-4 font-sans">
 
     <!-- Header -->
-    <header class="bg-white shadow-md">
+    <header class="bg-white dark:bg-gray-800 shadow-md">
         <div class="container mx-auto px-6 py-4 flex justify-between items-center">
             <div class="flex items-center space-x-3">
                 <img id="station-logo" src="" alt="Station Logo" class="h-10 w-10 rounded-full object-cover hidden">
@@ -25,9 +49,9 @@
 
     <main class="container mx-auto px-6 py-12">
         <!-- Hero Section -->
-        <section id="hero" class="text-center py-16 bg-white rounded-lg shadow-lg">
+        <section id="hero" class="text-center py-16 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
             <h2 id="hero-title" class="text-4xl md:text-5xl font-extrabold leading-tight">Welcome</h2>
-            <p id="hero-subtitle" class="mt-4 text-lg text-gray-600 max-w-2xl mx-auto">Broadcasting the best tunes 24/7.</p>
+            <p id="hero-subtitle" class="mt-4 text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">Broadcasting the best tunes 24/7.</p>
         </section>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-12">
@@ -36,20 +60,20 @@
             <div class="lg:col-span-2 space-y-8">
                 
                 <!-- Schedule Section -->
-                <section id="schedule-section" class="bg-white p-6 rounded-lg shadow-lg">
+                <section id="schedule-section" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
                     <h3 class="text-2xl font-bold mb-4">Live Schedule</h3>
                     <div id="schedule-list" class="space-y-3">
                         <!-- Schedule items will be injected here by JS -->
-                        <p class="text-gray-500">Loading schedule...</p>
+                        <p class="text-gray-500 dark:text-gray-400">Loading schedule...</p>
                     </div>
                 </section>
 
                 <!-- Blog Section -->
-                <section id="blog-section" class="bg-white p-6 rounded-lg shadow-lg">
+                <section id="blog-section" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
                     <h3 class="text-2xl font-bold mb-4">From The Blog</h3>
                     <div id="blog-posts" class="space-y-6">
                         <!-- Blog post items will be injected here by JS -->
-                         <p class="text-gray-500">Loading latest posts...</p>
+                         <p class="text-gray-500 dark:text-gray-400">Loading latest posts...</p>
                     </div>
                 </section>
 
@@ -57,7 +81,7 @@
 
             <!-- Sidebar: Widget -->
             <aside class="lg:col-span-1">
-                <div id="featured-section" class="bg-white p-6 rounded-lg shadow-lg">
+                <div id="featured-section" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
                     <h3 class="text-2xl font-bold mb-4">Listen & Interact</h3>
                     <iframe 
                         src="/widget.html" 
@@ -74,14 +98,14 @@
 
         <!-- Fallback Message -->
         <div id="no-content-message" class="hidden text-center py-20">
-            <h2 class="text-2xl font-bold text-gray-600">Our website is coming soon!</h2>
-            <p class="mt-2 text-gray-500">Check back later for the latest updates from the station.</p>
+            <h2 class="text-2xl font-bold text-gray-600 dark:text-gray-300">Our website is coming soon!</h2>
+            <p class="mt-2 text-gray-500 dark:text-gray-400">Check back later for the latest updates from the station.</p>
         </div>
     </main>
 
     <!-- Footer -->
-    <footer class="bg-white mt-12 border-t">
-        <div class="container mx-auto px-6 py-8 text-center text-gray-500">
+    <footer class="bg-white dark:bg-gray-800 mt-12 border-t border-gray-200 dark:border-gray-700">
+        <div class="container mx-auto px-6 py-8 text-center text-gray-500 dark:text-gray-400">
             <p>&copy; 2024 <span id="footer-station-name">AI Music Station</span>. All rights reserved.</p>
         </div>
     </footer>
