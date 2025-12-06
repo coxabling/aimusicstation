@@ -1,62 +1,19 @@
-
 import React, { useState, useMemo, ChangeEvent, useEffect, useCallback } from 'react';
-import { GoogleGenAI, Modality, Type } from '@google/genai';
-import { MusicIcon, PencilIcon, TrashIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, SparklesIcon, GlobeIcon, ExclamationCircleIcon, QueueAddIcon, VoiceIcon } from '../components/icons';
+import { MusicIcon, PencilIcon, TrashIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, SparklesIcon, GlobeIcon, ExclamationCircleIcon } from '../components/icons';
 import Modal from '../components/Modal';
 import InputField from '../components/InputField';
 import ToggleSwitch from '../components/ToggleSwitch';
-import type { ContentItem, MusicContent, ArticleContent, AdContent, CustomAudioContent, RssFeedContent, Playlist, ClonedVoice, RelayStreamContent } from '../types';
+import type { ContentItem, MusicContent, ArticleContent, AdContent, CustomAudioContent, RssFeedContent, Playlist, ClonedVoice } from '../types';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useContent } from '../contexts/ContentContext';
 import { useAuth } from '../contexts/AuthContext';
 import { isPlayableContent } from '../types';
-import { generateWithRetry, handleAiError } from '../services/ai';
+import { generateWithRetry } from '../services/ai';
 import { useToast } from '../contexts/ToastContext';
 import { fetchRssFeed, RssArticle } from '../services/rss';
 import * as db from '../services/db';
 
 // --- HELPER & UTILITY COMPONENTS ---
-
-const analysisSchema = {
-    type: Type.OBJECT,
-    properties: {
-        bpm: { type: Type.NUMBER, description: "Beats per minute of the track." },
-        key: { type: Type.STRING, description: "Musical key, e.g., 'C minor'." },
-        energy: { type: Type.INTEGER, description: "Energy level from 1 to 10." },
-        moodTags: { 
-            type: Type.ARRAY, 
-            description: "An array of 3-5 descriptive mood tags.",
-            items: { type: Type.STRING }
-        }
-    },
-    required: ["bpm", "key", "energy", "moodTags"]
-};
-
-const runMusicAnalysis = async (file: File, deductCredits: (amount: number, feature: string) => Promise<boolean>, addToast: (message: string, type: 'success' | 'error' | 'info') => void): Promise<Partial<MusicContent>> => {
-    const canProceed = await deductCredits(10, 'Music Analysis');
-    if (!canProceed) {
-        addToast('Insufficient credits for AI Music Analysis.', 'error');
-        throw new Error('Insufficient credits');
-    }
-    
-    try {
-        const prompt = `You are an expert music analysis tool. Analyze the following track based on its filename and generate metadata. Filename: '${file.name}'. Provide the BPM (beats per minute), musical key (e.g., 'C minor'), energy level (an integer from 1 to 10, where 10 is highest energy), and an array of 3-5 descriptive mood tags (e.g., 'driving', 'melancholic', 'summer vibe'). Return ONLY a JSON object matching the required schema.`;
-        
-        const response = await generateWithRetry({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: "application/json", responseSchema: analysisSchema }
-        });
-
-        const result = JSON.parse(response.text);
-        addToast(`Successfully analyzed "${file.name}"!`, 'success');
-        return result as Partial<MusicContent>;
-    } catch (error) {
-        handleAiError(error, addToast);
-        throw error;
-    }
-};
-
 
 const getPersonaPrompt = (vibe: string): string => {
     switch (vibe) {
@@ -86,52 +43,23 @@ const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
     </div>
 );
 
-// FIX: This helper function was missing in a previous commit, causing an error when handling file-based ads.
 const getAudioDuration = (file: File): Promise<string> => {
     return new Promise((resolve) => {
         const audio = document.createElement('audio');
-        const objectUrl = URL.createObjectURL(file);
-        audio.src = objectUrl;
+        audio.src = URL.createObjectURL(file);
         audio.onloadedmetadata = () => {
             const duration = Math.round(audio.duration);
             const minutes = Math.floor(duration / 60);
             const seconds = duration % 60;
             resolve(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-            // Removed URL.revokeObjectURL(objectUrl) as it was causing playback issues
+            URL.revokeObjectURL(audio.src);
         };
         audio.onerror = () => {
             resolve('0:00'); // Resolve with default on error
-            // Removed URL.revokeObjectURL(objectUrl) as it was causing playback issues
+            URL.revokeObjectURL(audio.src);
         };
     });
 };
-
-// --- AI PREVIEW HELPERS ---
-function decode(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i); }
-  return bytes;
-}
-function pcmToWav(pcmData: Uint8Array, sampleRate: number, numChannels: number, bitsPerSample: number): Blob {
-    const dataSize = pcmData.length; const buffer = new ArrayBuffer(44 + dataSize); const view = new DataView(buffer);
-    const writeString = (offset: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
-    const byteRate = sampleRate * numChannels * (bitsPerSample / 8); const blockAlign = numChannels * (bitsPerSample / 8);
-    writeString(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true); writeString(8, 'WAVE'); view.setUint16(20, 1, true); view.setUint16(22, numChannels, true); view.setUint32(24, sampleRate, true); view.setUint32(28, byteRate, true); view.setUint16(32, blockAlign, true); view.setUint16(34, bitsPerSample, true); writeString(36, 'data'); view.setUint32(40, dataSize, true); new Uint8Array(buffer, 44).set(pcmData);
-    return new Blob([view], { type: 'audio/wav' });
-}
-const getPreviewDuration = (url: string): Promise<string> => new Promise(resolve => {
-    const audio = document.createElement('audio');
-    audio.preload = 'metadata';
-    audio.onloadedmetadata = () => {
-        const duration = audio.duration;
-        resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
-    };
-    audio.onerror = () => resolve('0:05');
-    audio.src = url;
-});
-
 
 // --- SINGLE ITEM FORM ---
 
@@ -141,7 +69,6 @@ const ContentForm: React.FC<{ item: Partial<ContentItem>; onSave: (item: Partial
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isGeneratingAnnouncement, setIsGeneratingAnnouncement] = useState(false);
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
     const { addToast } = useToast();
     const { stationSettings, deductCredits } = useAuth();
 
@@ -151,14 +78,7 @@ const ContentForm: React.FC<{ item: Partial<ContentItem>; onSave: (item: Partial
             const newType = value as ContentItem['type'];
             const baseState: Partial<ContentItem> = { id: currentItem.id, title: currentItem.title || '' };
             if (newType !== 'Music' && newType !== 'Custom Audio' && newType !== 'Ad') setFile(null);
-            const typeDefaults: Record<ContentItem['type'], Partial<ContentItem>> = { 
-                'Music': { type: 'Music' as const, artist: '' }, 
-                'Article': { type: 'Article' as const, content: '' }, 
-                'Ad': { type: 'Ad' as const }, 
-                'Custom Audio': { type: 'Custom Audio' as const, artist: '' }, 
-                'RSS Feed': { type: 'RSS Feed' as const, source: '' },
-                'Relay Stream': { type: 'Relay Stream' as const, url: '' },
-            };
+            const typeDefaults = { 'Music': { type: 'Music' as const, artist: '' }, 'Article': { type: 'Article' as const, content: '' }, 'Ad': { type: 'Ad' as const }, 'Custom Audio': { type: 'Custom Audio' as const, artist: '' }, 'RSS Feed': { type: 'RSS Feed' as const, source: '' }, };
             setCurrentItem({ ...baseState, ...typeDefaults[newType], useAiAnnouncer: false, announcementWithBackgroundMusic: false, announcerVoice: 'AI-David' });
         } else {
              setCurrentItem(prev => ({ ...prev, [name]: value }));
@@ -177,52 +97,31 @@ const ContentForm: React.FC<{ item: Partial<ContentItem>; onSave: (item: Partial
 
     const handleToggle = (name: string, value: boolean) => setCurrentItem(prev => ({ ...prev, [name]: value }));
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        const isNewMusicUpload = !currentItem.id && file && currentItem.type === 'Music';
-        if (isUploading || isAnalyzing) return;
-
-        let itemData = { ...currentItem };
-
-        if (isNewMusicUpload) {
-            setIsAnalyzing(true);
-            try {
-                const analysisData = await runMusicAnalysis(file, deductCredits, addToast);
-                itemData = { ...itemData, ...analysisData };
-            } catch (error) {
-                // Analysis failed, but we can still proceed with saving
-                addToast('AI analysis failed. Saving without metadata.', 'error');
-            } finally {
-                setIsAnalyzing(false);
+        if (file && !isUploading) {
+            if (currentItem.type !== 'Music' && currentItem.type !== 'Ad' && currentItem.type !== 'Custom Audio') {
+                onSave(currentItem, file);
+                return;
             }
-        }
-        
-        if (file) {
-            simulateUploadAndSave(itemData, file);
-        } else if (!isUploading) {
-            onSave(itemData);
-        }
-    };
 
-    const simulateUploadAndSave = (itemToSave: Partial<ContentItem>, fileToSave?: File) => {
-        if (!fileToSave) {
-            onSave(itemToSave);
-            return;
+            setIsUploading(true);
+            setUploadProgress(0);
+            const interval = setInterval(() => {
+                setUploadProgress(prev => {
+                    const newProgress = prev + Math.floor(Math.random() * 15) + 5;
+                    if (newProgress >= 100) {
+                        clearInterval(interval);
+                        setUploadProgress(100);
+                        setTimeout(() => onSave(currentItem, file), 500);
+                        return 100;
+                    }
+                    return newProgress;
+                });
+            }, 250);
+        } else if (!isUploading) {
+            onSave(currentItem, file);
         }
-        setIsUploading(true);
-        setUploadProgress(0);
-        const interval = setInterval(() => {
-            setUploadProgress(prev => {
-                const newProgress = prev + Math.floor(Math.random() * 15) + 5;
-                if (newProgress >= 100) {
-                    clearInterval(interval);
-                    setUploadProgress(100);
-                    setTimeout(() => onSave(itemToSave, fileToSave), 500);
-                    return 100;
-                }
-                return newProgress;
-            });
-        }, 250);
     };
 
     const handleGenerateAnnouncement = async () => {
@@ -257,16 +156,13 @@ Keep the announcement under 45 seconds when read aloud.`;
     };
     
     const type = currentItem.type || 'Music';
-    const isProcessing = isUploading || isAnalyzing;
-    const buttonText = isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : isAnalyzing ? 'Analyzing...' : 'Save Content';
-
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <div>
                 <label htmlFor="type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content Type</label>
-                <select id="type" name="type" value={type} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-200 dark:disabled:bg-gray-600" disabled={isProcessing}>
-                    <option>Music</option><option>Article</option><option>Ad</option><option>Custom Audio</option><option>RSS Feed</option><option>Relay Stream</option>
+                <select id="type" name="type" value={type} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-200 dark:disabled:bg-gray-600" disabled={isUploading}>
+                    <option>Music</option><option>Article</option><option>Ad</option><option>Custom Audio</option><option>RSS Feed</option>
                 </select>
             </div>
             {(type === 'Music' || type === 'Custom Audio' || type === 'Ad') && (
@@ -276,9 +172,9 @@ Keep the announcement under 45 seconds when read aloud.`;
                         <div className="space-y-1 text-center">
                             <MusicIcon />
                             <div className="flex text-sm text-gray-600 dark:text-gray-400">
-                                <label htmlFor="file-upload" className={`relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-brand-blue hover:text-blue-700 focus-within:outline-none ${isProcessing ? 'cursor-not-allowed text-gray-400' : ''}`}>
+                                <label htmlFor="file-upload" className={`relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-brand-blue hover:text-blue-700 focus-within:outline-none ${isUploading ? 'cursor-not-allowed text-gray-400' : ''}`}>
                                     <span>Upload a file</span>
-                                    <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="audio/*" disabled={isProcessing} />
+                                    <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="audio/*" disabled={isUploading} />
                                 </label>
                             </div>
                             {file ? <p className="text-xs text-green-500">{file.name}</p> : <p className="text-xs text-gray-500 dark:text-gray-400">MP3, WAV, etc.</p>}
@@ -290,52 +186,40 @@ Keep the announcement under 45 seconds when read aloud.`;
                              <ProgressBar progress={uploadProgress} />
                         </div>
                     )}
-                    {isAnalyzing && <p className="text-sm text-center text-purple-600 dark:text-purple-400 font-semibold mt-2">Running AI Music Analysis...</p>}
                 </div>
             )}
-            <InputField label="Title" name="title" value={currentItem.title || ''} onChange={handleChange} placeholder="Content Title" disabled={isProcessing} />
-            {(type === 'Music' || type === 'Custom Audio' || type === 'Ad' || type === 'Relay Stream') && (
-                <InputField label="Duration" name="duration" value={currentItem.duration || ''} onChange={handleChange} placeholder="e.g., 3:45" disabled={isProcessing}/>
+            <InputField label="Title" name="title" value={currentItem.title || ''} onChange={handleChange} placeholder="Content Title" disabled={isUploading} />
+            {(type === 'Music' || type === 'Custom Audio' || type === 'Ad') && (
+                <InputField label="Duration" name="duration" value={currentItem.duration || ''} onChange={handleChange} placeholder="e.g., 3:45" disabled={isUploading}/>
             )}
-            {(type === 'Music' || type === 'Custom Audio') && <InputField label="Artist" name="artist" value={(currentItem as MusicContent | CustomAudioContent).artist || ''} onChange={handleChange} placeholder="Artist Name" disabled={isProcessing} />}
-            {type === 'Music' && <InputField label="Genre" name="genre" value={(currentItem as MusicContent).genre || ''} onChange={handleChange} placeholder="Music Genre" disabled={isProcessing} />}
-            {type === 'RSS Feed' && <InputField label="Source URL" name="source" value={(currentItem as RssFeedContent).source || ''} onChange={handleChange} placeholder="https://..." disabled={isProcessing} />}
-            {type === 'Relay Stream' && <InputField label="Stream URL" name="url" value={(currentItem as RelayStreamContent).url || ''} onChange={handleChange} placeholder="https://your-stream.com/live" disabled={isProcessing} />}
+            {(type === 'Music' || type === 'Custom Audio') && <InputField label="Artist" name="artist" value={(currentItem as MusicContent | CustomAudioContent).artist || ''} onChange={handleChange} placeholder="Artist Name" disabled={isUploading} />}
+            {type === 'Music' && <InputField label="Genre" name="genre" value={(currentItem as MusicContent).genre || ''} onChange={handleChange} placeholder="Music Genre" disabled={isUploading} />}
+            {type === 'RSS Feed' && <InputField label="Source URL" name="source" value={(currentItem as RssFeedContent).source || ''} onChange={handleChange} placeholder="https://..." disabled={isUploading} />}
             
             {type === 'Article' && (
-                <InputField label="Article Body" name="content" value={(currentItem as ArticleContent).content || ''} onChange={handleChange} placeholder="Write your article here, or generate one in the AI Content Studio." isTextarea disabled={isProcessing} />
+                <InputField label="Article Body" name="content" value={(currentItem as ArticleContent).content || ''} onChange={handleChange} placeholder="Write your article here, or generate one in the AI Content Studio." isTextarea disabled={isUploading} />
             )}
 
              {type === 'Music' && (
                 <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                      <h4 className="font-semibold text-gray-800 dark:text-white">Music Details (for AI Announcer)</h4>
                      <div className="grid grid-cols-2 gap-4">
-                        <InputField label="Album" name="album" value={(currentItem as MusicContent).album || ''} onChange={handleChange} placeholder="Album Name" disabled={isProcessing} />
-                        <InputField label="Year" name="year" value={(currentItem as MusicContent).year || ''} onChange={handleChange} placeholder="Release Year" disabled={isProcessing} />
+                        <InputField label="Album" name="album" value={(currentItem as MusicContent).album || ''} onChange={handleChange} placeholder="Album Name" disabled={isUploading} />
+                        <InputField label="Year" name="year" value={(currentItem as MusicContent).year || ''} onChange={handleChange} placeholder="Release Year" disabled={isUploading} />
                      </div>
-                     <InputField label="Fun Fact / Note" name="notes" value={(currentItem as MusicContent).notes || ''} onChange={handleChange} placeholder="e.g., Featured in the movie 'Drive'" isTextarea disabled={isProcessing} />
-                     {(currentItem as MusicContent).bpm && (
-                        <div className="p-4 border dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-900/50">
-                            <h4 className="text-sm font-semibold text-gray-800 dark:text-white mb-2">AI Analysis</h4>
-                            <div className="grid grid-cols-3 gap-4 text-sm">
-                                <div><span className="font-medium text-gray-500">BPM:</span> {(currentItem as MusicContent).bpm || 'N/A'}</div>
-                                <div><span className="font-medium text-gray-500">Key:</span> {(currentItem as MusicContent).key || 'N/A'}</div>
-                                <div><span className="font-medium text-gray-500">Energy:</span> {(currentItem as MusicContent).energy ? `${(currentItem as MusicContent).energy}/10` : 'N/A'}</div>
-                                <div className="col-span-3"><span className="font-medium text-gray-500">Moods:</span> {((currentItem as MusicContent).moodTags || []).join(', ') || 'N/A'}</div>
-                            </div>
-                        </div>
-                     )}
+                     <InputField label="Mood/Tags" name="mood" value={(currentItem as MusicContent).mood || ''} onChange={handleChange} placeholder="e.g., Summer Anthem, 80s" disabled={isUploading} />
+                     <InputField label="Fun Fact / Note" name="notes" value={(currentItem as MusicContent).notes || ''} onChange={handleChange} placeholder="e.g., Featured in the movie 'Drive'" isTextarea disabled={isUploading} />
                 </div>
             )}
 
             <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <h4 className="font-semibold text-gray-800 dark:text-white">AI Announcement</h4>
-                <ToggleSwitch label="Use AI Announcer" enabled={!!currentItem.useAiAnnouncer} onChange={(val) => handleToggle('useAiAnnouncer', val)} disabled={isProcessing} />
+                <ToggleSwitch label="Use AI Announcer" enabled={!!currentItem.useAiAnnouncer} onChange={(val) => handleToggle('useAiAnnouncer', val)} disabled={isUploading} />
                 {currentItem.useAiAnnouncer && (
                     <div className="space-y-4 pl-4 border-l-2 border-gray-200 dark:border-gray-600">
                         <div>
                             <label htmlFor="announcerVoice" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Announcer Voice</label>
-                            <select id="announcerVoice" name="announcerVoice" value={currentItem.announcerVoice || 'AI-David'} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700" disabled={isProcessing}>
+                            <select id="announcerVoice" name="announcerVoice" value={currentItem.announcerVoice || 'AI-David'} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700" disabled={isUploading}>
                                 <optgroup label="Standard Voices">
                                     <option>AI-David</option>
                                     <option>AI-Sarah</option>
@@ -352,13 +236,13 @@ Keep the announcement under 45 seconds when read aloud.`;
                             </select>
                         </div>
                         <div>
-                             <InputField label="Predefined Announcement" name="predefinedAnnouncement" value={currentItem.predefinedAnnouncement || ''} onChange={handleChange} placeholder="Leave blank for AI-generated announcement" isTextarea disabled={isProcessing} />
+                             <InputField label="Predefined Announcement" name="predefinedAnnouncement" value={currentItem.predefinedAnnouncement || ''} onChange={handleChange} placeholder="Leave blank for AI-generated announcement" isTextarea disabled={isUploading} />
                              {type === 'Music' && (
                                 <div className="flex justify-end -mt-2">
                                     <button
                                         type="button"
                                         onClick={handleGenerateAnnouncement}
-                                        disabled={isGeneratingAnnouncement || isProcessing || !(currentItem as MusicContent).artist || !(currentItem as MusicContent).title}
+                                        disabled={isGeneratingAnnouncement || isUploading || !(currentItem as MusicContent).artist || !(currentItem as MusicContent).title}
                                         className="flex items-center px-3 py-1 text-xs bg-purple-100 text-purple-700 font-semibold rounded-lg shadow-sm hover:bg-purple-200 dark:bg-purple-900/50 dark:text-purple-300 dark:hover:bg-purple-900 focus:outline-none disabled:opacity-50"
                                     >
                                         <SparklesIcon className="h-3 w-3 mr-1.5" />
@@ -367,13 +251,13 @@ Keep the announcement under 45 seconds when read aloud.`;
                                 </div>
                              )}
                         </div>
-                        <ToggleSwitch label="Add background music to announcement" enabled={!!currentItem.announcementWithBackgroundMusic} onChange={(val) => handleToggle('announcementWithBackgroundMusic', val)} disabled={isProcessing} />
+                        <ToggleSwitch label="Add background music to announcement" enabled={!!currentItem.announcementWithBackgroundMusic} onChange={(val) => handleToggle('announcementWithBackgroundMusic', val)} disabled={isUploading} />
                     </div>
                 )}
             </div>
             <div className="flex justify-end pt-4 space-x-2">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed" disabled={isProcessing}>Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400 dark:disabled:bg-blue-800 disabled:cursor-not-allowed" disabled={isProcessing}>{buttonText}</button>
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed" disabled={isUploading}>Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400 dark:disabled:bg-blue-800 disabled:cursor-not-allowed" disabled={isUploading}>{isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Save Content'}</button>
             </div>
         </form>
     );
@@ -604,47 +488,6 @@ const AddToPlaylistForm: React.FC<{ item: ContentItem | null; playlists: Playlis
     );
 };
 
-const BulkAddToPlaylistForm: React.FC<{
-    itemCount: number;
-    playlists: Playlist[];
-    onAdd: (playlistIds: string[]) => void;
-    onCancel: () => void;
-}> = ({ itemCount, playlists, onAdd, onCancel }) => {
-    const [selectedPlaylists, setSelectedPlaylists] = useState<string[]>([]);
-
-    const handleCheckboxChange = (playlistId: string, checked: boolean) => {
-        setSelectedPlaylists(prev => checked ? [...prev, playlistId] : prev.filter(id => id !== playlistId));
-    };
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        onAdd(selectedPlaylists);
-    };
-
-    return (
-        <form onSubmit={handleSubmit}>
-            <p className="text-gray-700 dark:text-gray-300 mb-4">Add <strong>{itemCount} selected items</strong> to the following playlists:</p>
-            <div className="space-y-3 max-h-60 overflow-y-auto border dark:border-gray-600 rounded-md p-3">
-                {playlists.length > 0 ? playlists.map(playlist => (
-                    <label key={playlist.id} className="flex items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                        <input
-                            type="checkbox"
-                            className="h-5 w-5 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
-                            checked={selectedPlaylists.includes(playlist.id)}
-                            onChange={e => handleCheckboxChange(playlist.id, e.target.checked)}
-                        />
-                        <span className="ml-3 text-sm font-medium text-gray-800 dark:text-gray-200">{playlist.name}</span>
-                    </label>
-                )) : <p className="text-center text-gray-500 dark:text-gray-400">No playlists found. Create one on the Playlists page first.</p>}
-            </div>
-            <div className="flex justify-end pt-6 space-x-2">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500">Cancel</button>
-                <button type="submit" disabled={selectedPlaylists.length === 0} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 disabled:bg-blue-400">Add to Playlists</button>
-            </div>
-        </form>
-    );
-};
-
 const BulkEditForm: React.FC<{ items: ContentItem[]; onSave: (changes: Partial<ContentItem>) => void; onCancel: () => void; clonedVoices: ClonedVoice[]; }> = ({ items, onSave, onCancel, clonedVoices }) => {
     const [changes, setChanges] = useState<Record<string, any>>({});
     const [fieldsToUpdate, setFieldsToUpdate] = useState<Record<string, boolean>>({});
@@ -816,13 +659,9 @@ const MergeSummarizeForm: React.FC<{ items: (ArticleContent | RssFeedContent)[];
     );
 };
 
-interface ContentManagementProps {
-  onSelectionChange: (selectedIds: string[]) => void;
-}
-
-const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange }) => {
+const ContentManagement: React.FC = () => {
     const { contentItems, addContentItem, bulkAddContentItems, bulkAddTextContentItems, updateContentItem, deleteContentItems, bulkUpdateContentItems, isLoading } = useContent();
-    const { currentUser, deductCredits } = useAuth();
+    const { currentUser } = useAuth();
     const [isSingleItemModalOpen, setIsSingleItemModalOpen] = useState(false);
     const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
     const [filesToBulkUpload, setFilesToBulkUpload] = useState<File[]>([]);
@@ -834,7 +673,6 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     const [selectedItems, setSelectedItems] = useState<string[]>([]);
     const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
     const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
-    const [isBulkPlaylistModalOpen, setIsBulkPlaylistModalOpen] = useState(false);
     const [playlists, setPlaylists] = useState<Playlist[]>([]);
     const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>([]);
     const [currentItemForPlaylist, setCurrentItemForPlaylist] = useState<ContentItem | null>(null);
@@ -843,11 +681,9 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     const [currentRssFeed, setCurrentRssFeed] = useState<RssFeedContent | null>(null);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [itemsToDelete, setItemsToDelete] = useState<string[]>([]);
-    const [previewingItemId, setPreviewingItemId] = useState<string | null>(null);
     
     const { addToast } = useToast();
-    // FIX: Invoke usePlayer hook correctly.
-    const { currentItem, playbackState, isPreviewing, playPreview, addToQueue, togglePlayPause } = usePlayer();
+    const { currentItem, playbackState, isPreviewing, playPreview } = usePlayer();
 
     const isPlaying = playbackState === 'playing';
     
@@ -909,64 +745,6 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
 
         return items;
     }, [contentItems, searchQuery, typeFilter, sortConfig]);
-
-    const handleAiPreview = async (item: ArticleContent) => {
-        if (!currentUser) return;
-
-        if (isPreviewing && currentItem?.id.startsWith(`ai-preview-${item.id}`)) {
-            togglePlayPause();
-            return;
-        }
-
-        if (!item.content) {
-            addToast('This article has no content to preview.', 'error');
-            return;
-        }
-
-        const canProceed = await deductCredits(5, 'AI Article Preview');
-        if (!canProceed) return;
-
-        setPreviewingItemId(item.id);
-        try {
-            const textToSpeak = item.title + ". " + item.content;
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const response = await ai.models.generateContent({
-                model: "gemini-2.5-flash-preview-tts",
-                contents: [{ parts: [{ text: textToSpeak }] }],
-                config: {
-                    responseModalities: [Modality.AUDIO],
-                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } }
-                }
-            });
-
-            const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-            if (!base64Audio) throw new Error("TTS failed to return audio data.");
-            
-            const pcmBytes = decode(base64Audio);
-            const wavBlob = pcmToWav(pcmBytes, 24000, 1, 16);
-            const audioUrl = URL.createObjectURL(wavBlob);
-            
-            const duration = await getPreviewDuration(audioUrl);
-
-            const previewItem: CustomAudioContent = {
-                id: `ai-preview-${item.id}-${Date.now()}`,
-                tenantId: currentUser.tenantId,
-                type: 'Custom Audio',
-                title: `Preview: ${item.title}`,
-                artist: 'AI Announcer',
-                duration: duration,
-                date: new Date().toISOString(),
-                url: audioUrl,
-            };
-            
-            playPreview(previewItem);
-
-        } catch (error) {
-            handleAiError(error, addToast);
-        } finally {
-            setPreviewingItemId(null);
-        }
-    };
     
     const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files ? Array.from(e.target.files) : [];
@@ -995,18 +773,8 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
         if (e.target) e.target.value = '';
     };
 
-    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newSelection = e.target.checked ? processedContent.map(i => i.id) : [];
-        setSelectedItems(newSelection);
-        onSelectionChange(newSelection);
-    };
-
-    const handleSelectItem = (id: string, checked: boolean) => {
-        const newSelection = checked ? [...selectedItems, id] : selectedItems.filter(i => i !== id);
-        setSelectedItems(newSelection);
-        onSelectionChange(newSelection);
-    };
-
+    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => setSelectedItems(e.target.checked ? processedContent.map(i => i.id) : []);
+    const handleSelectItem = (id: string, checked: boolean) => setSelectedItems(checked ? [...selectedItems, id] : selectedItems.filter(i => i !== id));
     const isAllSelected = processedContent.length > 0 && selectedItems.length === processedContent.length;
     const selectedContent = useMemo(() => contentItems.filter(item => selectedItems.includes(item.id)), [contentItems, selectedItems]);
     const areAllSelectedItemsSameType = useMemo(() => {
@@ -1017,11 +785,6 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     const areAllSelectedItemsTextBased = useMemo(() => {
         if (selectedContent.length < 2) return false;
         return selectedContent.every(item => item.type === 'Article' || item.type === 'RSS Feed');
-    }, [selectedContent]);
-    const areAllSelectedItemsPlayable = useMemo(() => {
-        if (selectedContent.length === 0) return false;
-        const playableTypes: ContentItem['type'][] = ['Music', 'Ad', 'Custom Audio', 'Relay Stream'];
-        return selectedContent.every(item => playableTypes.includes(item.type));
     }, [selectedContent]);
 
     const handleEdit = (item: ContentItem) => { setEditingItem(item); setIsSingleItemModalOpen(true); };
@@ -1062,9 +825,7 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     const confirmDelete = () => {
         if (itemsToDelete.length > 0) {
             deleteContentItems(itemsToDelete);
-            const newSelection = selectedItems.filter(id => !itemsToDelete.includes(id));
-            setSelectedItems(newSelection);
-            onSelectionChange(newSelection);
+            setSelectedItems(prev => prev.filter(id => !itemsToDelete.includes(id)));
             addToast(`${itemsToDelete.length} item(s) deleted.`, 'info');
         }
         setIsDeleteModalOpen(false);
@@ -1073,13 +834,10 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
 
     const handleBulkSave = (changes: Partial<ContentItem>) => {
         bulkUpdateContentItems(selectedItems, changes);
-        setIsBulkEditModalOpen(false); 
-        setSelectedItems([]); 
-        onSelectionChange([]);
+        setIsBulkEditModalOpen(false); setSelectedItems([]);
     };
     
     const handleOpenPlaylistModal = (item: ContentItem) => { setCurrentItemForPlaylist(item); setIsPlaylistModalOpen(true); };
-    
     const handleAddToPlaylist = async (playlistIds: string[]) => {
         if (!currentItemForPlaylist || !currentUser) return;
         await db.addTracksToPlaylists([currentItemForPlaylist.originalId || currentItemForPlaylist.id], playlistIds, currentUser.tenantId);
@@ -1088,20 +846,10 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
         setCurrentItemForPlaylist(null);
     };
 
-    const handleBulkAddToPlaylist = async (playlistIds: string[]) => {
-        if (!currentUser || selectedItems.length === 0) return;
-        await db.addTracksToPlaylists(selectedItems, playlistIds, currentUser.tenantId);
-        addToast(`${selectedItems.length} items added to ${playlistIds.length} playlist(s).`, 'success');
-        setIsBulkPlaylistModalOpen(false);
-        setSelectedItems([]);
-        onSelectionChange([]);
-    };
-
     const handleSaveMerge = (newItemData: Partial<ArticleContent>) => {
         addContentItem(newItemData);
         setIsMergeModalOpen(false);
         setSelectedItems([]);
-        onSelectionChange([]);
     };
     
     const handleBulkItemsSave = (items: Partial<Omit<ContentItem, 'id' | 'date'>>[], files: File[]) => {
@@ -1111,13 +859,7 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     };
 
     const handleDownload = (item: ContentItem) => {
-        // Prevent downloading for non-playable items or relay streams
-        if (item.type === 'Relay Stream') {
-            addToast(`Relay streams cannot be downloaded as they are live feeds.`, 'error');
-            return;
-        }
-        if (!isPlayableContent(item) && !('file' in item && item.file)) { // Also check for files that might not be 'playable' but are downloadable
-            addToast(`"${item.title}" has no downloadable content.`, 'error');
+        if (!isPlayableContent(item)) {
             return;
         }
 
@@ -1125,34 +867,24 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
         link.style.display = 'none';
         const filename = item.title || 'download';
         
-        // Handle content with an actual File object (e.g., uploaded Music, Ad, Custom Audio)
-        if ('file' in item && item.file && item.file instanceof File) {
+        if (item.file && item.file instanceof File) {
             const blobUrl = URL.createObjectURL(item.file);
             link.href = blobUrl;
-            link.download = item.file.name || filename; // Use original filename if available
+            link.download = item.file.name || filename;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            URL.revokeObjectURL(blobUrl); // Revoke after download is initiated
-        }
-        // Handle content with a direct URL (e.g., Music, Ad, Custom Audio from external URLs)
-        else if (item.url) { // Already filtered out Relay Stream
+            URL.revokeObjectURL(blobUrl);
+        } 
+        else if (item.url) {
             link.href = item.url;
-            link.download = filename; // Generic filename for URL-based content
-            link.target = '_blank'; // Open in new tab to allow direct download/viewing
-            link.rel = 'noopener noreferrer'; // Security best practice for target="_blank"
+            link.download = filename;
+            link.target = '_blank'; 
+            link.rel = 'noopener noreferrer';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-        } else {
-            // This case should ideally not be reached if previous checks are robust
-            addToast(`"${item.title}" has no downloadable content.`, 'error');
         }
-    };
-
-    const handleAddToQueue = (item: ContentItem) => {
-        addToQueue([item]);
-        addToast(`"${item.title}" added to the playout queue.`, 'success');
     };
 
     return (
@@ -1167,14 +899,6 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
     
             <Modal isOpen={isPlaylistModalOpen} onClose={() => setIsPlaylistModalOpen(false)} title="Add to Playlist">
                 <AddToPlaylistForm item={currentItemForPlaylist} playlists={playlists} onAdd={handleAddToPlaylist} onCancel={() => setIsPlaylistModalOpen(false)} />
-            </Modal>
-             <Modal isOpen={isBulkPlaylistModalOpen} onClose={() => setIsBulkPlaylistModalOpen(false)} title="Add to Playlist">
-                <BulkAddToPlaylistForm
-                    itemCount={selectedItems.length}
-                    playlists={playlists}
-                    onAdd={handleBulkAddToPlaylist}
-                    onCancel={() => setIsBulkPlaylistModalOpen(false)}
-                />
             </Modal>
             
             <Modal isOpen={isBulkEditModalOpen} onClose={() => setIsBulkEditModalOpen(false)} title="Bulk Edit">
@@ -1227,11 +951,10 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
                     <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4 p-4 -m-6 mb-0 bg-blue-50 dark:bg-gray-700/50 rounded-t-lg">
                         <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{selectedItems.length} item(s) selected</h2>
                         <div className="flex items-center gap-4 flex-wrap justify-center">
-                             <button onClick={() => setIsBulkPlaylistModalOpen(true)} disabled={!areAllSelectedItemsPlayable} className="px-4 py-2 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600 disabled:bg-gray-400 disabled:cursor-not-allowed">Add to Playlist</button>
                             <button onClick={() => setIsBulkEditModalOpen(true)} disabled={!areAllSelectedItemsSameType} className="px-4 py-2 bg-yellow-500 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-600 disabled:bg-gray-400 disabled:cursor-not-allowed">Edit Selected</button>
                             {areAllSelectedItemsTextBased && <button onClick={() => setIsMergeModalOpen(true)} className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700">Merge & Summarize</button>}
                             <button onClick={handleBulkDelete} className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700">Delete Selected</button>
-                            <button onClick={() => { setSelectedItems([]); onSelectionChange([]); }} className="px-4 py-2 bg-gray-500 text-white font-semibold rounded-lg shadow-md hover:bg-gray-600">Deselect All</button>
+                            <button onClick={() => setSelectedItems([])} className="px-4 py-2 bg-gray-500 text-white font-semibold rounded-lg shadow-md hover:bg-gray-600">Deselect All</button>
                         </div>
                     </div>
                 ) : (
@@ -1256,7 +979,7 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
                     </div>
                     <div>
                         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700">
-                            <option>All</option><option>Music</option><option>Article</option><option>Ad</option><option>Custom Audio</option><option>RSS Feed</option><option>Relay Stream</option>
+                            <option>All</option><option>Music</option><option>Article</option><option>Ad</option><option>Custom Audio</option><option>RSS Feed</option>
                         </select>
                     </div>
                 </div>
@@ -1283,19 +1006,9 @@ const ContentManagement: React.FC<ContentManagementProps> = ({ onSelectionChange
                                         <td className="px-4 py-4">{item.duration}</td>
                                         <td className="px-4 py-4">{new Date(item.date).toLocaleDateString()}</td>
                                         <td className="px-4 py-4"><div className="flex items-center space-x-3">
-                                            {isPlayableContent(item) ? (<><button onClick={() => playPreview(item)} className="text-brand-blue hover:text-blue-700" title={isPreviewing && currentItem?.id === item.id && isPlaying ? 'Pause' : 'Preview'}>{isPreviewing && currentItem?.id === item.id && isPlaying ? <PauseCircleIcon /> : <PlayCircleIcon />}</button><button onClick={() => handleDownload(item)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Download Source"><DownloadIcon /></button></>) : (<>
-                                                {item.type === 'RSS Feed' && <button onClick={() => { setCurrentRssFeed(item as RssFeedContent); setIsRssModalOpen(true); }} className="text-blue-500 hover:text-blue-700" title="View Articles"><GlobeIcon /></button>}
-                                                {item.type === 'Article' && (
-                                                    <button onClick={() => handleAiPreview(item as ArticleContent)} disabled={previewingItemId === item.id} className="text-purple-500 hover:text-purple-700 disabled:text-gray-400" title="Preview with AI Voice">
-                                                        {previewingItemId === item.id ? (
-                                                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                                        ) : ( isPreviewing && currentItem?.id.startsWith(`ai-preview-${item.id}`) && isPlaying ? <PauseCircleIcon /> : <VoiceIcon /> )}
-                                                    </button>
-                                                )}
-                                            </>)}
+                                            {isPlayableContent(item) ? (<><button onClick={() => playPreview(item)} className="text-brand-blue hover:text-blue-700" title={isPreviewing && currentItem?.id === item.id && isPlaying ? 'Pause' : 'Preview'}>{isPreviewing && currentItem?.id === item.id && isPlaying ? <PauseCircleIcon /> : <PlayCircleIcon />}</button><button onClick={() => handleDownload(item)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Download Source"><DownloadIcon /></button></>) : (item.type === 'RSS Feed' && <button onClick={() => { setCurrentRssFeed(item as RssFeedContent); setIsRssModalOpen(true); }} className="text-blue-500 hover:text-blue-700" title="View Articles"><GlobeIcon /></button>)}
                                             <button onClick={() => handleEdit(item)} className="text-brand-blue hover:text-blue-700" title="Edit"><PencilIcon /></button>
-                                            <button onClick={() => handleAddToQueue(item)} className="text-green-500 hover:text-green-700" title="Add to Playout Queue"><QueueAddIcon /></button>
-                                            <button onClick={() => handleOpenPlaylistModal(item)} className="text-purple-500 hover:text-purple-700" title="Add to Playlist"><PlaylistAddIcon /></button>
+                                            <button onClick={() => handleOpenPlaylistModal(item)} className="text-green-500 hover:text-green-700" title="Add to Playlist"><PlaylistAddIcon /></button>
                                             <button onClick={() => handleDelete(item.id)} className="text-red-500 hover:text-red-700" title="Delete"><TrashIcon /></button>
                                         </div></td>
                                     </tr>

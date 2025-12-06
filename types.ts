@@ -1,5 +1,6 @@
 
 
+
 export interface Station {
   name: string;
   description: string;
@@ -8,11 +9,7 @@ export interface Station {
   radioFormat: 'Music Radio' | 'Talk Radio';
   vibe?: 'Upbeat' | 'Chill' | 'Playful' | 'Professional' | 'Default';
   enableAiWebResearch?: boolean;
-  failoverPlaylistId?: string;
-  streamUrl?: string;
 }
-
-export type StreamStatus = 'offline' | 'auto-dj' | 'live-dj' | 'failover';
 
 export type Role = 'Admin' | 'User';
 
@@ -28,7 +25,6 @@ export interface User {
   credits: number;
   subscriptionPlan: 'Hobby' | 'Pro Broadcaster' | 'Network';
   renewalDate: string;
-  status: 'active' | 'pending';
 }
 
 export interface CreditUsageLog {
@@ -67,6 +63,7 @@ interface BaseContentItem {
   announcementWithBackgroundMusic?: boolean;
   isGeneratingAnnouncement?: boolean;
   deliveryStyle?: 'Energetic' | 'Whisper' | 'Conversational' | 'Formal Newscaster' | 'Default';
+  announcementAudioUrl?: string; // URL for cached announcement audio
 }
 
 export interface MusicContent extends BaseContentItem {
@@ -77,11 +74,8 @@ export interface MusicContent extends BaseContentItem {
   file?: File;
   album?: string;
   year?: string;
+  mood?: string;
   notes?: string;
-  bpm?: number;
-  key?: string;
-  energy?: number; // 1-10
-  moodTags?: string[]; // Corrected comment from 'mood'
 }
 
 export interface ArticleContent extends BaseContentItem {
@@ -108,16 +102,11 @@ export interface RssFeedContent extends BaseContentItem {
     content?: string;
 }
 
-export interface RelayStreamContent extends BaseContentItem {
-    type: 'Relay Stream';
-    url: string;
-}
-
-export type ContentItem = MusicContent | ArticleContent | AdContent | CustomAudioContent | RssFeedContent | RelayStreamContent;
+export type ContentItem = MusicContent | ArticleContent | AdContent | CustomAudioContent | RssFeedContent;
 
 // Type guard to check if a content item is playable audio with a valid URL.
-export function isPlayableContent(item: ContentItem): item is (MusicContent | AdContent | CustomAudioContent | RelayStreamContent) & { url: string } {
-    if (item.type === 'Music' || item.type === 'Ad' || item.type === 'Custom Audio' || item.type === 'Relay Stream') {
+export function isPlayableContent(item: ContentItem): item is (MusicContent | AdContent | CustomAudioContent) & { url: string } {
+    if (item.type === 'Music' || item.type === 'Ad' || item.type === 'Custom Audio') {
         return typeof item.url === 'string' && item.url.trim() !== '';
     }
     return false;
@@ -150,10 +139,6 @@ export interface AudioContent {
   published: boolean;
   url?: string;
   file?: File;
-  bpm?: number;
-  key?: string;
-  energy?: number;
-  moodTags?: string[];
 }
 
 export interface CalendarEvent {
@@ -221,11 +206,11 @@ export interface RssFeedSettings {
   outroText: string;
   stringsToReplace: { from: string; to: string }[];
   schedules: string[];
-  targetPlaylistId?: string;
 }
 
 // Add Clockwheel types for the Show Designer feature.
-export type ClockwheelBlockType = 'Music' | 'Ad' | 'Jingle' | 'News' | 'Weather' | 'StationID' | 'Promo' | 'Article' | 'Thematic' | 'Relay Stream';
+// FIX: Add 'Article' to ClockwheelBlockType to support talk radio formats.
+export type ClockwheelBlockType = 'Music' | 'Ad' | 'Jingle' | 'News' | 'Weather' | 'StationID' | 'Promo' | 'Article' | 'Thematic';
 
 export interface ClockwheelBlock {
     type: ClockwheelBlockType;
@@ -273,13 +258,6 @@ export interface Webhook {
     name: string;
     url: string;
     service: WebhookService;
-}
-
-export interface AIReport {
-  id: string;
-  tenantId: string;
-  date: string;
-  content: string; // Markdown content from AI
 }
 
 export interface WebsiteSettings {

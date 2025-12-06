@@ -1,8 +1,6 @@
 
-
 import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect, useRef } from 'react';
-// FIX: Import StreamStatus to use it in the context.
-import { ContentItem, isPlayableContent, AudioContent, MusicContent, AdContent, CustomAudioContent, Station, Campaign, Clockwheel, Webhook, User, StreamStatus, RelayStreamContent } from '../types';
+import { ContentItem, isPlayableContent, AudioContent, MusicContent, AdContent, CustomAudioContent, Station, Campaign, Clockwheel, Webhook, User } from '../types';
 import { useContent } from './ContentContext';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { generateWithRetry, handleAiError } from '../services/ai';
@@ -36,8 +34,6 @@ interface PlayerContextType {
     announcementGenerationProgress: number;
     playoutHistory: PlayoutHistoryItem[];
     isAiProgramDirectorActive: boolean;
-    // FIX: Add streamStatus to the context type for Dashboard.tsx
-    streamStatus: StreamStatus;
     
     setIsAiProgramDirectorActive: (isActive: boolean) => void;
     loadSchedule: (items: ContentItem[]) => void;
@@ -58,9 +54,6 @@ interface PlayerContextType {
     shuffleQueue: () => void;
     updateQueueItem: (index: number, item: ContentItem) => void;
     handleListenerLike: (likedItem: ContentItem) => void;
-    // FIX: Add start/end live broadcast functions for LiveDJModal.tsx
-    startLiveDJBroadcast: () => void;
-    endLiveDJBroadcast: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -75,13 +68,17 @@ const parseDuration = (durationStr: string): number => {
 
 const sanitizeForTTS = (text: string): string => {
   if (!text) return '';
-  // Remove parenthetical cues (e.g., "(with excitement)"), markdown characters, and collapse whitespace.
-  // This helps prevent errors with the TTS model which expects clean, spoken-word text.
+  // Remove parenthetical cues, markdown, quotes, and other non-speech elements.
+  // This is a fail-safe to ensure clean text is sent to the TTS model.
   return text
     .replace(/\(.*?\)/g, '') // Remove (anything in parentheses)
+    .replace(/\[.*?\]/g, '')    // Also remove [anything in square brackets]
     .replace(/[*_#`]/g, '')    // Remove markdown characters
-    .replace(/—/g, '-')       // Replace em-dash
-    .replace(/…/g, '...')     // Replace ellipsis character
+    .replace(/^(Here is the announcement:|Here's your script:|Announcement:)\s*/i, '') // Remove common introductory phrases
+    .replace(/^"|"$/g, '')   // Remove leading/trailing double quotes
+    .replace(/^'|'$/g, '')   // Remove leading/trailing single quotes
+    .replace(/—/g, '-')       // Replace em-dash with hyphen
+    .replace(/…/g, '...')     // Replace ellipsis character with three dots
     .replace(/\s{2,}/g, ' ')  // Collapse multiple whitespace characters into a single space
     .trim();
 };
@@ -114,6 +111,46 @@ async function decodeAudioData(
   }
   return buffer;
 }
+
+/**
+ * Wraps raw PCM audio data in a valid WAV header.
+ * @param pcmData The raw PCM audio bytes.
+ * @param sampleRate The sample rate of the audio (e.g., 24000).
+ * @param numChannels The number of audio channels (e.g., 1 for mono).
+ * @param bitsPerSample The number of bits per sample (e.g., 16).
+ * @returns A Blob representing a complete .wav file.
+ */
+function pcmToWav(pcmData: Uint8Array, sampleRate: number, numChannels: number, bitsPerSample: number): Blob {
+    const dataSize = pcmData.length;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+    const writeString = (offset: number, str: string) => {
+        for (let i = 0; i < str.length; i++) {
+            view.setUint8(offset + i, str.charCodeAt(i));
+        }
+    };
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const blockAlign = numChannels * (bitsPerSample / 8);
+
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitsPerSample, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    new Uint8Array(buffer, 44).set(pcmData);
+
+    return new Blob([view], { type: 'audio/wav' });
+}
+
 
 function getAnnouncerVoiceName(voice: string): string {
     switch (voice) {
@@ -159,8 +196,8 @@ async function generateAnnouncementText(item: ContentItem, previousItem: Content
                 contentDetails = `The next song is "${item.title}" by "${item.artist}".
                 Album: ${item.album || 'N/A'}
                 Year: ${item.year || 'N/A'}
-                Mood/Tags: ${(item as MusicContent).moodTags?.join(', ') || 'N/A'}
-                Note: ${(item as MusicContent).notes || 'N/A'}`;
+                Mood/Tags: ${item.mood || 'N/A'}
+                Note: ${item.notes || 'N/A'}`;
                 break;
             case 'Ad':
                  contentDetails = `The next item is an advertisement titled "${item.title}".`;
@@ -175,8 +212,8 @@ async function generateAnnouncementText(item: ContentItem, previousItem: Content
 
         prompt += `\nHere are the details:\n${contentDetails}`;
         
-        prompt += `\nWrite the announcement in a way that sounds natural and engaging for a radio broadcast. The text itself should convey the intended emotion and energy, without using special cues like parentheses. For example, instead of writing "(Smoothly) Here is...", you should write something like "And now, let's ease into...".
-Keep the announcement under 20 seconds when read aloud.`;
+        prompt += `\nWrite the announcement in a natural, engaging radio broadcast style. Keep the script under 50 words (about 15 seconds).
+CRITICAL: The final output must contain only the announcement script itself. Do not include any markdown (like asterisks or hashtags), quotes, structural elements, or introductory phrases like 'Here is the announcement:'. Do not repeat the source information (artist, title) outside of the narrative flow of the announcement.`;
         
         const generateContentRequest: any = { model: 'gemini-2.5-flash', contents: prompt };
         
@@ -247,9 +284,6 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [previewItem, setPreviewItem] = useState<ContentItem | null>(null);
     const [savedPlayoutState, setSavedPlayoutState] = useState<SavedPlayoutState | null>(null);
     const [isAiProgramDirectorActive, setIsAiProgramDirectorActive] = useState(false);
-    // FIX: Add state for stream status and live DJ mode.
-    const [streamStatus, setStreamStatus] = useState<StreamStatus>('offline');
-    const preLivePlaybackStateRef = useRef<PlaybackState>('stopped');
 
     const [isGeneratingAnnouncements, setIsGeneratingAnnouncements] = useState(false);
     const [announcementGenerationProgress, setAnnouncementGenerationProgress] = useState(0);
@@ -273,6 +307,19 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const albumArtCache = useRef(new Map<string, string>());
     const generationIdRef = useRef(0);
     const prevQueueIndexRef = useRef(-1);
+    const announcementBlobUrls = useRef<string[]>([]);
+    const isProcessingAnnouncements = useRef(false);
+
+    const playoutQueueRef = useRef(playoutQueue);
+    useEffect(() => {
+        playoutQueueRef.current = playoutQueue;
+    }, [playoutQueue]);
+
+    useEffect(() => {
+        return () => {
+            announcementBlobUrls.current.forEach(URL.revokeObjectURL);
+        };
+    }, []);
     
     useEffect(() => {
         const loadWebhooks = async () => {
@@ -283,27 +330,6 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         };
         loadWebhooks();
     }, [currentUser]);
-
-    // Cleanup blob URLs on unmount
-    useEffect(() => {
-        return () => {
-            audioRefs.forEach(ref => {
-                if (ref.current) {
-                    const blobSrc = ref.current.getAttribute('data-blob-src');
-                    if (blobSrc) {
-                        URL.revokeObjectURL(blobSrc);
-                    }
-                }
-            });
-            // FIX: Ensure AudioContext for announcements is closed on unmount
-            if (announcementAudioContextRef.current) {
-                if (announcementAudioContextRef.current.state !== 'closed') {
-                    announcementAudioContextRef.current.close().catch(e => console.error("Error closing AudioContext on unmount:", e));
-                }
-                announcementAudioContextRef.current = null;
-            }
-        };
-    }, []);
 
     const postToWebhook = async (webhook: Webhook, item: ContentItem) => {
         if (item.type !== 'Music') return; // Only post for music tracks
@@ -421,7 +447,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         
         setCurrentQueueIndex(prevIndex => {
             const nextIndex = prevIndex + 1;
-            if (nextIndex < playoutQueue.length) {
+            if (nextIndex < playoutQueueRef.current.length) {
                 if (!isCrossfade) {
                     getActivePlayer()?.pause();
                     setPlaybackState('playing');
@@ -430,59 +456,13 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 return nextIndex;
             }
             setPlaybackState('stopped');
-            // FIX: Set stream status when broadcast ends
-            setStreamStatus('offline');
             return -1;
         });
-    }, [isPreviewing, playoutQueue.length]);
+    }, [isPreviewing]);
 
     const onTrackEnd = useCallback(() => {
         playNext(isCrossfadingRef.current);
     }, [playNext]);
-
-    const playContentDirectly = useCallback(async (player: HTMLAudioElement, item: (MusicContent | AdContent | CustomAudioContent | RelayStreamContent) & { url: string }) => {
-        if (!player || !item || !item.url) {
-            if (item) console.error(`Skipping track due to invalid/missing URL: ${item.title || item.id}`, item);
-            onTrackEnd(); // Move to the next track if current is invalid
-            return;
-        }
-
-        const errorHandler = (event: Event) => {
-            const mediaError = (event.target as HTMLAudioElement).error;
-            console.error(`Audio error for "${item.title}" (ID: ${item.id}):`, mediaError?.message, `(Code: ${mediaError?.code})`, player.src);
-            addToast(`Failed to play "${item.title}". Skipping track.`, 'error');
-            onTrackEnd();
-        };
-        
-        // Ensure we only have one error listener per player per track attempt
-        player.removeEventListener('error', errorHandler);
-        player.addEventListener('error', errorHandler, { once: true });
-
-        // Only update src if it's different to avoid unnecessary network requests and potential browser issues
-        if (player.src !== item.url) {
-            player.src = item.url;
-            player.load(); // Request new data if src changed
-        }
-
-        // Attempt to play. Catch is crucial for Promise rejections (e.g., user gesture needed, AbortError)
-        player.play().catch(error => {
-            if (error.name === 'AbortError') {
-                // This is often harmless, e.g., if playback is interrupted by another play request or manual stop
-                // or if it's a preloading player that got paused.
-                console.log(`Playback aborted for "${item.title}".`);
-            } else if (error.name === 'NotAllowedError') {
-                // Browser policy preventing autoplay without user interaction
-                console.error(`Autoplay prevented for "${item.title}". User interaction needed.`, error);
-                addToast('Autoplay prevented. Please interact with the player to start playback.', 'info');
-                setPlaybackState('paused'); // Pause so user can manually resume
-            } else {
-                console.error(`Audio play failed for "${item.title}":`, error);
-                // Let the 'error' event listener handle calling onTrackEnd for more critical errors.
-                // Avoid calling onTrackEnd twice if an actual media error also fires.
-            }
-        });
-    }, [onTrackEnd, addToast]);
-
 
     const handleTimeUpdate = useCallback(() => {
         const player = getActivePlayer();
@@ -492,7 +472,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setCurrentTime(currentTime);
         setDuration(duration);
 
-        const nextItem = playoutQueue[currentQueueIndex + 1];
+        const nextItem = playoutQueueRef.current[currentQueueIndex + 1];
         if (duration > 0 && duration - currentTime < 1.5 && nextItem && isPlayableContent(nextItem) && !isCrossfadingRef.current && !isDuckingRef.current) {
             isCrossfadingRef.current = true;
             const activePlayer = getActivePlayer();
@@ -506,14 +486,47 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
             if (nextPlayer) {
                 nextPlayer.volume = 0;
-                playContentDirectly(nextPlayer, nextItem as any).then(() => {
-                    fadeVolume(nextPlayer, isMuted ? 0 : volume, 1500);
-                });
+                nextPlayer.play().catch(e => console.error("Next player failed to play:", e));
+                fadeVolume(nextPlayer, isMuted ? 0 : volume, 1500);
             }
             playNext(true);
         }
-    }, [currentQueueIndex, playoutQueue, isMuted, volume, playNext, fadeVolume, playContentDirectly]);
+    }, [currentQueueIndex, isMuted, volume, playNext, fadeVolume, duration, currentTime]);
     
+    const playContentDirectly = useCallback((player: HTMLAudioElement, item: (MusicContent | AdContent | CustomAudioContent) & { url: string }) => {
+        if (!player || !item || !item.url) {
+            if (item) {
+                console.error(`Skipping track due to invalid URL: ${item.title}`, item);
+            }
+            onTrackEnd(); // Skip to next track
+            return;
+        }
+    
+        const errorHandler = (event: Event) => {
+            const mediaError = (event.target as HTMLAudioElement).error;
+            console.error(`Audio error for "${item.title}" (ID: ${item.id}):`, mediaError?.message, `(Code: ${mediaError?.code})`);
+            onTrackEnd();
+        };
+    
+        const playPromise = () => {
+            player.removeEventListener('error', errorHandler); // Clean up previous error listener
+            player.addEventListener('error', errorHandler, { once: true });
+            player.play().catch(error => {
+                if (error.name !== 'AbortError') {
+                    console.error(`Audio play failed for "${item.title}":`, error);
+                }
+            });
+        };
+    
+        if (player.src !== item.url) {
+            player.src = item.url;
+            player.load();
+            player.addEventListener('canplaythrough', playPromise, { once: true });
+        } else {
+            playPromise();
+        }
+    }, [onTrackEnd]);
+
     const playArticleTTS = useCallback((buffer: AudioBuffer, offset: number) => {
         if (announcementSourceRef.current) {
             announcementSourceRef.current.onended = null;
@@ -547,8 +560,8 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [playNext]);
     
     useEffect(() => {
-        if (!isPreviewing && prevQueueIndexRef.current !== -1 && prevQueueIndexRef.current < playoutQueue.length) {
-            const finishedItem = playoutQueue[prevQueueIndexRef.current];
+        if (!isPreviewing && prevQueueIndexRef.current !== -1 && prevQueueIndexRef.current < playoutQueueRef.current.length) {
+            const finishedItem = playoutQueueRef.current[prevQueueIndexRef.current];
             if (finishedItem) {
                 setPlayoutHistory(prev => [{ ...finishedItem, playedAt: new Date() }, ...prev].slice(0, 20));
             }
@@ -603,71 +616,77 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     activePlayer.volume = isMuted ? 0 : volume;
                     
                     const needsAnnouncement = currentItem.useAiAnnouncer;
-                    const text = currentItem.predefinedAnnouncement;
                     const playWithBackgroundMusic = needsAnnouncement && currentItem.announcementWithBackgroundMusic;
 
-                    const generateAndPlayTTS = async (onComplete: () => void, textToSpeak?: string) => {
-                        const sanitizedText = sanitizeForTTS(textToSpeak || '');
-                        if (!sanitizedText) {
-                            onComplete();
-                            return;
-                        }
-                        
-                        const canProceed = await deductCredits(1, 'On-the-fly Announcement');
-                        if (!canProceed) {
-                            console.warn("Insufficient credits for on-the-fly announcement.");
-                            onComplete();
-                            return;
-                        }
-
-                        try {
-                            const ttsResponse = await generateWithRetry({ model: "gemini-2.5-flash-preview-tts", contents: [{ parts: [{ text: sanitizedText }] }], config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: getAnnouncerVoiceName(currentItem.announcerVoice || '') } } } } });
-                            
-                            if (generationIdRef.current !== currentGenerationId) return;
-
-                            const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-                            if (!base64Audio) throw new Error("TTS failed.");
-
-                            if (!announcementAudioContextRef.current) announcementAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-                            const ctx = announcementAudioContextRef.current;
-                            if (ctx.state === 'suspended') await ctx.resume();
-                            const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
-                            
-                            if (announcementSourceRef.current) {
+                    const playCachedOrGenerateTTS = async (onComplete: () => void) => {
+                        const playFromBuffer = async (buffer: AudioBuffer) => {
+                             if (announcementSourceRef.current) {
                                 announcementSourceRef.current.onended = null;
                                 try { announcementSourceRef.current.stop(); } catch (e) {}
                             }
-                            
-                            const source = ctx.createBufferSource();
-                            source.buffer = audioBuffer;
-                            source.connect(ctx.destination);
+                            const source = announcementAudioContextRef.current!.createBufferSource();
+                            source.buffer = buffer;
+                            source.connect(announcementAudioContextRef.current!.destination);
                             announcementSourceRef.current = source;
                             source.onended = onComplete;
                             source.start();
-                        } catch(e) {
-                            handleAiError(e, addToast);
-                            onComplete();
+                        };
+                        
+                        if (currentItem.announcementAudioUrl) {
+                             if (!announcementAudioContextRef.current) announcementAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+                            const ctx = announcementAudioContextRef.current;
+                             if (ctx.state === 'suspended') await ctx.resume();
+
+                            try {
+                                const response = await fetch(currentItem.announcementAudioUrl);
+                                const arrayBuffer = await response.arrayBuffer();
+                                const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                                playFromBuffer(audioBuffer);
+                            } catch (error) {
+                                console.error("Failed to play cached announcement, falling back.", error);
+                                onComplete(); // Fallback to just playing the song
+                            }
+                        } else { // Fallback to on-the-fly generation
+                            const textToSpeak = currentItem.predefinedAnnouncement;
+                            const sanitizedText = sanitizeForTTS(textToSpeak || '');
+                            if (!sanitizedText) { onComplete(); return; }
+                            
+                            const canProceed = await deductCredits(1, 'On-the-fly Announcement');
+                            if (!canProceed) { onComplete(); return; }
+
+                            try {
+                                const ttsResponse = await generateWithRetry({ model: "gemini-2.5-flash-preview-tts", contents: [{ parts: [{ text: sanitizedText }] }], config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: getAnnouncerVoiceName(currentItem.announcerVoice || '') } } } } });
+                                const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                                if (!base64Audio) throw new Error("TTS failed.");
+                                
+                                if (!announcementAudioContextRef.current) announcementAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+                                const ctx = announcementAudioContextRef.current;
+                                if (ctx.state === 'suspended') await ctx.resume();
+                                const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+                                playFromBuffer(audioBuffer);
+                            } catch(e) {
+                                handleAiError(e, addToast);
+                                onComplete();
+                            }
                         }
                     };
 
                     if (playWithBackgroundMusic) {
                         playContentDirectly(activePlayer, currentItem);
-                        if (text) {
-                            isDuckingRef.current = true;
-                            await fadeVolume(activePlayer, (isMuted ? 0 : volume) * 0.2, 800);
-                            await generateAndPlayTTS(() => {
-                                fadeVolume(activePlayer, isMuted ? 0 : volume, 1200).then(() => isDuckingRef.current = false);
-                            }, text);
-                        }
+                        isDuckingRef.current = true;
+                        await fadeVolume(activePlayer, (isMuted ? 0 : volume) * 0.2, 800);
+                        await playCachedOrGenerateTTS(() => {
+                            fadeVolume(activePlayer, isMuted ? 0 : volume, 1200).then(() => isDuckingRef.current = false);
+                        });
                     } else if (needsAnnouncement) {
-                        await generateAndPlayTTS(() => playContentDirectly(activePlayer, currentItem), text);
+                        await playCachedOrGenerateTTS(() => playContentDirectly(activePlayer, currentItem));
                     } else {
                         playContentDirectly(activePlayer, currentItem);
                     }
                  }
             } else {
-                const isArticleForTTS = (currentItem.type === 'Article' || currentItem.type === 'RSS Feed') && currentItem.useAiAnnouncer && currentItem.content;
-            
+                const isArticleForTTS = (currentItem.type === 'Article' || currentItem.type === 'RSS Feed') && currentItem.useAiAnnouncer && (currentItem.content || currentItem.predefinedAnnouncement);
+
                 const runTimerFallback = (defaultDuration = '0:30') => {
                     const itemDuration = parseDuration(currentItem.duration || defaultDuration);
                     setDuration(itemDuration);
@@ -688,75 +707,172 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 if (isArticleForTTS) {
                     const canProceed = await deductCredits(1, 'Article TTS Playout');
                     if (!canProceed) {
-                        console.warn("Insufficient credits for article TTS. Using fallback timer.");
+                        console.warn("Insufficient credits for article TTS.");
                         runTimerFallback('1:00');
-                    } else {
-                        try {
-                            const text = sanitizeForTTS(currentItem.content!);
-                            if (!text) {
-                                console.warn(`Article "${currentItem.title}" has no content after sanitization. Using fallback timer.`);
-                                runTimerFallback('0:05');
-                                return;
-                            }
-                            
-                            const MAX_TTS_CHARS = 4000;
-                            let textToSpeak = text;
-                            if (textToSpeak.length > MAX_TTS_CHARS) {
-                                console.warn(`Article content is too long for TTS (${textToSpeak.length} chars). Truncating to ~${MAX_TTS_CHARS} characters.`);
-                                let truncated = textToSpeak.substring(0, MAX_TTS_CHARS);
-                                const lastSentenceEnd = Math.max(truncated.lastIndexOf('.'), truncated.lastIndexOf('?'), truncated.lastIndexOf('!'));
-
-                                if (lastSentenceEnd > 0) {
-                                    textToSpeak = truncated.substring(0, lastSentenceEnd + 1);
-                                } else {
-                                    textToSpeak = truncated + "...";
-                                }
-                            }
-                            
-                            const ttsResponse = await generateWithRetry({ model: "gemini-2.5-flash-preview-tts", contents: [{ parts: [{ text: textToSpeak }] }], config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: getAnnouncerVoiceName(currentItem.announcerVoice || '') } } } } });
-                            
-                            if (generationIdRef.current !== currentGenerationId) {
-                                console.log("Aborting stale article TTS generation.");
-                                runTimerFallback('0:05');
-                                return;
-                            }
-
-                            const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-                            if (!base64Audio) throw new Error("TTS generation returned no audio data.");
-                            
-                            if (!announcementAudioContextRef.current) announcementAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-                            const ctx = announcementAudioContextRef.current;
-                            if (ctx.state === 'suspended') await ctx.resume();
-
-                            const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
-                            currentArticleBufferRef.current = audioBuffer;
-                            articleResumeTimeRef.current = 0;
-                            setDuration(audioBuffer.duration);
-                            setCurrentTime(0);
-                            playArticleTTS(audioBuffer, 0);
-
-                        } catch (e) {
-                            handleAiError(e, addToast);
-                            runTimerFallback('1:00');
+                        return;
+                    }
+                    try {
+                        let scriptToRead = currentItem.predefinedAnnouncement;
+                        if (!scriptToRead) {
+                            const scriptPrompt = `You are a professional radio news anchor. Rewrite the following article into a broadcast-ready script with a clear intro and outro. The script should be engaging and easy to read aloud.\n\nARTICLE:\n${currentItem.content}`;
+                            const scriptResponse = await generateWithRetry({ model: 'gemini-2.5-flash', contents: scriptPrompt });
+                            scriptToRead = scriptResponse.text;
                         }
+
+                        const sanitizedScript = sanitizeForTTS(scriptToRead);
+                        if (!sanitizedScript) {
+                            console.warn(`Article "${currentItem.title}" has no content after sanitization. Using fallback timer.`);
+                            runTimerFallback('0:05');
+                            return;
+                        }
+                        
+                        const ttsResponse = await generateWithRetry({ model: "gemini-2.5-flash-preview-tts", contents: [{ parts: [{ text: sanitizedScript }] }], config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: getAnnouncerVoiceName(currentItem.announcerVoice || '') } } } } });
+                        
+                        const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                        if (!base64Audio) throw new Error("TTS generation returned no audio data.");
+                        
+                        if (!announcementAudioContextRef.current) announcementAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+                        const ctx = announcementAudioContextRef.current;
+                        if (ctx.state === 'suspended') await ctx.resume();
+
+                        const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+                        currentArticleBufferRef.current = audioBuffer;
+                        articleResumeTimeRef.current = 0;
+                        setDuration(audioBuffer.duration);
+                        setCurrentTime(0);
+
+                        if (currentItem.announcementWithBackgroundMusic) {
+                            const musicBed = audioContentItems.find(item => item.type === 'Music' && item.genre?.includes('Bed') && isPlayableContent(item as any));
+                            if (musicBed && isPlayableContent(musicBed as any)) {
+                                playContentDirectly(activePlayer, musicBed as any);
+                                isDuckingRef.current = true;
+                                await fadeVolume(activePlayer, (isMuted ? 0 : volume) * 0.2, 800);
+                                playArticleTTS(audioBuffer, 0);
+                                
+                                // Set a timeout to fade out the music at the end of the article
+                                const fadeOutTime = (audioBuffer.duration - 1.5) * 1000;
+                                if (fadeOutTime > 0) {
+                                    setTimeout(() => {
+                                        fadeVolume(activePlayer, 0, 1200).then(() => {
+                                            activePlayer.pause();
+                                            isDuckingRef.current = false;
+                                        });
+                                    }, fadeOutTime);
+                                }
+                            } else {
+                                playArticleTTS(audioBuffer, 0);
+                            }
+                        } else {
+                            playArticleTTS(audioBuffer, 0);
+                        }
+                    } catch (e) {
+                        handleAiError(e, addToast);
+                        runTimerFallback('1:00');
                     }
                 } else {
                     runTimerFallback();
                 }
             }
 
-            const nextItem = playoutQueue[currentQueueIndex + 1];
+            const nextItem = playoutQueueRef.current[currentQueueIndex + 1];
             if (nextPlayer && nextItem && isPlayableContent(nextItem)) {
-                // Preload next track
-                playContentDirectly(nextPlayer, nextItem as any);
-                nextPlayer.pause();
+                nextPlayer.src = nextItem.url;
+                nextPlayer.load();
             }
         };
 
         handlePlayout();
         return cleanup;
-    }, [currentItem, playbackState, playoutQueue, currentQueueIndex, volume, isMuted, playContentDirectly, fadeVolume, playNext, playArticleTTS, currentUser, onTrackEnd, fetchAlbumArt, deductCredits, addToast, isPreviewing, webhooks]);
+    }, [currentItem, playbackState, currentQueueIndex, volume, isMuted, playContentDirectly, fadeVolume, playNext, playArticleTTS, currentUser, onTrackEnd, fetchAlbumArt, deductCredits, addToast, isPreviewing, webhooks, audioContentItems]);
     
+    // Proactive Announcement Generation Effect
+    useEffect(() => {
+        const processQueue = async () => {
+            if (isProcessingAnnouncements.current || playoutQueue.length === 0) return;
+            isProcessingAnnouncements.current = true;
+    
+            const lookahead = 10;
+            const startIndex = currentQueueIndex >= 0 ? currentQueueIndex : 0;
+            const itemsToProcess = playoutQueue.slice(startIndex, startIndex + lookahead);
+    
+            for (let i = 0; i < itemsToProcess.length; i++) {
+                const item = itemsToProcess[i];
+                const queueIndex = startIndex + i;
+    
+                if (item.useAiAnnouncer && !item.announcementAudioUrl && !item.isGeneratingAnnouncement) {
+                    const contentId = item.originalId || item.id;
+                    let textToSpeak = item.predefinedAnnouncement;
+
+                    // Ensure we update the item in the queue to prevent re-generation
+                    setPlayoutQueue(prev => {
+                        const newQueue = [...prev];
+                        if (newQueue[queueIndex]) newQueue[queueIndex] = { ...newQueue[queueIndex], isGeneratingAnnouncement: true };
+                        return newQueue;
+                    });
+    
+                    try {
+                        const cached = await db.getCachedAnnouncement(contentId);
+                        if (cached) {
+                            const url = URL.createObjectURL(cached.audioBlob);
+                            announcementBlobUrls.current.push(url);
+                            setPlayoutQueue(prev => {
+                                const newQueue = [...prev];
+                                newQueue[queueIndex] = { ...newQueue[queueIndex], announcementAudioUrl: url, isGeneratingAnnouncement: false };
+                                return newQueue;
+                            });
+                            continue; // Move to next item
+                        }
+                        
+                        // If no text, generate it (e.g., for on-the-fly)
+                        if (!textToSpeak) {
+                             const previousItem = queueIndex > 0 ? playoutQueue[queueIndex - 1] : null;
+                             textToSpeak = await generateAnnouncementText(item, previousItem);
+                        }
+                        
+                        const sanitizedText = sanitizeForTTS(textToSpeak || '');
+                        if (!sanitizedText) {
+                            throw new Error("No text to generate speech from.");
+                        }
+
+                        const ttsResponse = await generateWithRetry({ model: "gemini-2.5-flash-preview-tts", contents: [{ parts: [{ text: sanitizedText }] }], config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: getAnnouncerVoiceName(item.announcerVoice || '') } } } } });
+                        const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                        if (!base64Audio) throw new Error("TTS generation returned no audio data.");
+
+                        const audioBytes = decode(base64Audio);
+                        const audioBlob = pcmToWav(audioBytes, 24000, 1, 16);
+
+                        await db.saveCachedAnnouncement({ contentId, audioBlob });
+                        const url = URL.createObjectURL(audioBlob);
+                        announcementBlobUrls.current.push(url);
+
+                        setPlayoutQueue(prev => {
+                            const newQueue = [...prev];
+                            newQueue[queueIndex] = { ...newQueue[queueIndex], announcementAudioUrl: url, predefinedAnnouncement: textToSpeak, isGeneratingAnnouncement: false };
+                            return newQueue;
+                        });
+
+                    } catch (error) {
+                        console.error(`Failed to pre-generate announcement for "${item.title}":`, error);
+                        // Mark as not generating so it can be tried again or fall back to on-the-fly
+                        setPlayoutQueue(prev => {
+                             const newQueue = [...prev];
+                             newQueue[queueIndex] = { ...newQueue[queueIndex], isGeneratingAnnouncement: false };
+                             return newQueue;
+                        });
+                    }
+                    // Add a delay to respect the TTS rate limit (10 requests per minute).
+                    // A 20-second delay ensures we stay well under the limit.
+                    await new Promise(resolve => setTimeout(resolve, 20000));
+                }
+            }
+            isProcessingAnnouncements.current = false;
+        };
+
+        processQueue();
+
+    }, [playoutQueue, currentQueueIndex, deductCredits, addToast]);
+
+
     useEffect(() => {
         if (!isPreviewing) {
             activePlayerIndex.current = 1 - activePlayerIndex.current;
@@ -766,28 +882,21 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const loadSchedule = useCallback((items: ContentItem[]) => {
         generationIdRef.current++;
         countedImpressionsRef.current.clear();
+        announcementBlobUrls.current.forEach(URL.revokeObjectURL);
+        announcementBlobUrls.current = [];
         setPlayoutQueue(items);
         setPlayoutHistory([]);
         prevQueueIndexRef.current = -1;
         if (items.length > 0) {
             setCurrentQueueIndex(0);
             setPlaybackState('playing');
-            // FIX: Set stream status when starting broadcast
-            setStreamStatus('auto-dj');
         } else {
             setCurrentQueueIndex(-1);
             setPlaybackState('stopped');
-            // FIX: Set stream status when stopping broadcast
-            setStreamStatus('offline');
     
             audioRefs.forEach(ref => {
                 if (ref.current) {
                     ref.current.pause();
-                    const blobSrc = ref.current.getAttribute('data-blob-src');
-                    if (blobSrc) {
-                        URL.revokeObjectURL(blobSrc);
-                        ref.current.removeAttribute('data-blob-src');
-                    }
                     if (ref.current.src) {
                         ref.current.removeAttribute('src');
                         ref.current.load();
@@ -802,7 +911,6 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 announcementSourceRef.current = null;
             }
             if (announcementAudioContextRef.current) {
-                // FIX: Check if context is already closed before attempting to close
                 if (announcementAudioContextRef.current.state !== 'closed') {
                     announcementAudioContextRef.current.close().catch(e => console.error("Error closing AudioContext:", e));
                 }
@@ -815,8 +923,8 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             nonAudioTimerRef.current = null;
             fadeIntervalRef.current = null;
 
-            isCrossfadingRef.current = false; // FIX: Reset crossfade state
-            isDuckingRef.current = false;     // FIX: Reset ducking state
+            isCrossfadingRef.current = false;
+            isDuckingRef.current = false;
         }
         setIsPreviewing(false);
         setPreviewItem(null);
@@ -847,7 +955,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (totalToGenerate > 0) {
             setIsGeneratingAnnouncements(true);
             setAnnouncementGenerationProgress(0);
-            addToast('Generating schedule and AI announcements...', 'info');
+            addToast('Generating schedule and AI announcement scripts...', 'info');
         } else {
             addToast('Schedule loaded. Starting broadcast.', 'success');
             loadSchedule(newSchedule);
@@ -862,7 +970,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (item.useAiAnnouncer && !item.predefinedAnnouncement && item.type === 'Music' && creditsAvailable) {
                 const canProceed = await deductCredits(1, 'Pre-generation Announcement');
                 if (!canProceed) {
-                    addToast('Insufficient credits. Halting announcement pre-generation.', 'error');
+                    addToast('Insufficient credits. Halting announcement script pre-generation.', 'error');
                     creditsAvailable = false;
                     finalSchedule.push(item);
                     continue;
@@ -889,12 +997,12 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     
         setIsGeneratingAnnouncements(false);
-        loadSchedule(finalSchedule);
+        loadSchedule(finalSchedule); // This will load the schedule and trigger the background audio generation
     
         if (totalToGenerate > 0 && generatedCount === totalToGenerate) {
-            addToast('AI announcements are ready! Starting broadcast.', 'success');
+            addToast('AI scripts are ready! Caching audio & starting broadcast.', 'success');
         } else if (totalToGenerate > 0) {
-            addToast('Broadcast starting with available announcements.', 'info');
+            addToast('Broadcast starting. Announcements will be cached in the background.', 'info');
         }
     }, [loadSchedule, addToast, deductCredits]);
 
@@ -944,7 +1052,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     };
     
-    const togglePlayPause = useCallback(() => {
+    const togglePlayPause = () => {
        if (!currentItem) return;
        const player = getActivePlayer();
        const isArticle = (currentItem.type === 'Article' || currentItem.type === 'RSS Feed') && currentItem.useAiAnnouncer;
@@ -976,7 +1084,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                  player?.play().catch(e => console.error("Audio play failed on resume", e));
             }
        }
-    }, [currentItem, playbackState, currentTime, playArticleTTS, getActivePlayer]);
+    };
 
     const seek = (time: number) => {
         if (!currentItem) return;
@@ -992,38 +1100,44 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const removeFromQueue = useCallback((indexToRemove: number) => {
         setPlayoutQueue(prevQueue => {
             const newQueue = prevQueue.filter((_, index) => index !== indexToRemove);
-            setCurrentQueueIndex(prevIndex => {
-                if (indexToRemove < prevIndex) return prevIndex - 1;
-                if (indexToRemove === prevIndex) {
-                    if (prevIndex >= newQueue.length) {
-                        setPlaybackState('stopped');
-                        // FIX: Set stream status when broadcast ends
-                        setStreamStatus('offline');
-                        return -1;
+            
+            // This logic needs to only run if the current index is affected
+            if (currentQueueIndex >= indexToRemove) {
+                 setCurrentQueueIndex(prevIndex => {
+                    if (indexToRemove < prevIndex) return prevIndex - 1;
+                    if (indexToRemove === prevIndex) {
+                        if (prevIndex >= newQueue.length) {
+                            setPlaybackState('stopped');
+                            return -1;
+                        }
+                        setCurrentTime(0);
+                        setPlaybackState('playing');
                     }
-                    setCurrentTime(0);
-                    setPlaybackState('playing');
-                }
-                return prevIndex;
-            });
+                    return prevIndex;
+                });
+            }
             return newQueue;
         });
-    }, []);
+    }, [currentQueueIndex]);
 
     const reorderQueue = useCallback((startIndex: number, endIndex: number) => {
         setPlayoutQueue(prevQueue => {
             const newQueue = [...prevQueue];
             const [movedItem] = newQueue.splice(startIndex, 1);
             newQueue.splice(endIndex, 0, movedItem);
-            setCurrentQueueIndex(prevIndex => {
-                if (prevIndex === startIndex) return endIndex;
-                if (startIndex < prevIndex && endIndex >= prevIndex) return prevIndex - 1;
-                if (startIndex > prevIndex && endIndex <= prevIndex) return prevIndex + 1;
-                return prevIndex;
-            });
+            
+            if (currentQueueIndex >= Math.min(startIndex, endIndex) && currentQueueIndex <= Math.max(startIndex, endIndex)) {
+                 setCurrentQueueIndex(prevIndex => {
+                    if (prevIndex === startIndex) return endIndex;
+                    if (startIndex < prevIndex && endIndex >= prevIndex) return prevIndex - 1;
+                    if (startIndex > prevIndex && endIndex <= prevIndex) return prevIndex + 1;
+                    return prevIndex;
+                });
+            }
+
             return newQueue;
         });
-    }, []);
+    }, [currentQueueIndex]);
 
     const addToQueue = useCallback((items: ContentItem[]) => {
         if (items.length === 0) return;
@@ -1032,8 +1146,6 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (playbackState === 'stopped' && currentQueueIndex === -1) {
                 setCurrentQueueIndex(prevQueue.length);
                 setPlaybackState('playing');
-                // FIX: Set stream status when starting broadcast
-                setStreamStatus('auto-dj');
                 setCurrentTime(0);
             }
             return newQueue;
@@ -1069,9 +1181,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
 
         const canProceed = await deductCredits(5, 'AI Program Director Suggestion');
-        if (!canProceed) {
-            return;
-        }
+        if (!canProceed) return;
 
         try {
             const allMusic = [...contentItems, ...audioContentItems].filter(item => item.type === 'Music');
@@ -1093,7 +1203,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 Your task is to pick one similar song from the library to play next. The new song should match the genre and mood.
 Do not pick a song by the same artist if other options are available.
 Available songs: ${JSON.stringify(musicLibrary.slice(0, 100))}
-Return ONLY the ID of the best match as a JSON object like {"id": "song_id_123"}. If no good match is found, return {"id": null}.`;
+Return your choice ONLY as a JSON object with a single key "id". Example: {"id": "song_id_123"}`;
 
             const response = await generateWithRetry({ model: 'gemini-2.5-flash', contents: prompt });
             const result = JSON.parse(response.text.replace(/```json|```/g, '').trim());
@@ -1126,36 +1236,8 @@ Return ONLY the ID of the best match as a JSON object like {"id": "song_id_123"}
             }
         } catch (error) {
             handleAiError(error, addToast);
-        } finally {
-            addToast(`The AI Program Director couldn't find a suitable song.`, 'error');
         }
     }, [isAiProgramDirectorActive, currentUser, deductCredits, contentItems, audioContentItems, addToast, currentQueueIndex]);
-
-    const startLiveDJBroadcast = useCallback(() => {
-        // Save the current playback state before pausing for the live session.
-        preLivePlaybackStateRef.current = playbackState;
-        if (playbackState === 'playing') {
-            togglePlayPause(); // This will set the state to 'paused'.
-        }
-        setStreamStatus('live-dj');
-        addToast("Live DJ broadcast has started! Auto DJ is paused.", "info");
-    }, [playbackState, togglePlayPause, addToast]);
-
-    const endLiveDJBroadcast = useCallback(() => {
-        // Restore the appropriate stream status.
-        setStreamStatus(playoutQueue.length > 0 && currentQueueIndex !== -1 ? 'auto-dj' : 'offline');
-        
-        // If the Auto DJ was playing before the live session began, resume it.
-        if (preLivePlaybackStateRef.current === 'playing' && playbackState !== 'playing') {
-            togglePlayPause(); // This will resume playback.
-            addToast("Resuming Auto DJ.", "info");
-        } else {
-            addToast("Live DJ has disconnected.", "info");
-        }
-        
-        // Reset the saved state for the next session.
-        preLivePlaybackStateRef.current = 'stopped';
-    }, [playbackState, togglePlayPause, addToast, playoutQueue.length, currentQueueIndex]);
 
     const value = { 
         currentItem, playbackState, isPreviewing, currentTime, duration, volume, isMuted,
@@ -1163,8 +1245,7 @@ Return ONLY the ID of the best match as a JSON object like {"id": "song_id_123"}
         playNext, playPrevious, seek, beginSeek, endSeek, setVolume, setIsMuted, reorderQueue,
         removeFromQueue, addToQueue, shuffleQueue, updateQueueItem,
         isGeneratingAnnouncements, announcementGenerationProgress, generateScheduleAndAnnouncements,
-        playoutHistory, isAiProgramDirectorActive, setIsAiProgramDirectorActive, handleListenerLike,
-        streamStatus, startLiveDJBroadcast, endLiveDJBroadcast
+        playoutHistory, isAiProgramDirectorActive, setIsAiProgramDirectorActive, handleListenerLike
     };
 
     return (

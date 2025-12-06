@@ -1,5 +1,4 @@
 
-
 import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect } from 'react';
 import { User, Station, Role, CreditUsageLog } from '../types';
 import * as db from '../services/db';
@@ -89,18 +88,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [loadTenantData]);
 
     const switchUser = useCallback(async (userId: string) => {
-        let user = await db.getUser(userId);
+        const user = await db.getUser(userId);
         if (user) {
-            // Activate user on first login
-            if (user.status === 'pending') {
-                user.status = 'active';
-                await db.saveUser(user);
-                addToast(`Welcome, ${user.username}! Your account is now active.`, 'success');
-            }
             setCurrentUser(user);
             sessionStorage.setItem(SESSION_STORAGE_KEY, user.id);
             await loadTenantData(user);
             addToast(`Switched to user: ${user.email}`, 'info');
+            // Force a reload to ensure all contexts reset correctly
+            window.location.reload();
         }
     }, [loadTenantData, addToast]);
 
@@ -124,7 +119,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     }, [currentUser]);
     
-    const addUser = async (email: string, role: Role): Promise<boolean> => {
+    const addUser = useCallback(async (email: string, role: Role): Promise<boolean> => {
         if (!currentUser || currentUser.role !== 'Admin') return false;
         const existingUser = await db.getUser(email);
         if (existingUser) {
@@ -142,15 +137,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             credits: 5000,
             subscriptionPlan: 'Hobby',
             renewalDate: renewalDate.toISOString(),
-            status: 'pending',
         };
         await db.saveUser(newUser);
         setUsers(prev => [...prev, newUser].sort((a, b) => a.email.localeCompare(b.email)));
-        addToast(`Invitation sent to ${email}. The user will become active once they sign in.`, 'success');
+        addToast(`User ${email} created successfully.`, 'success');
         return true;
-    };
+    }, [currentUser, addToast]);
     
-    const deleteUser = async (userId: string) => {
+    const deleteUser = useCallback(async (userId: string) => {
         if (!currentUser || currentUser.role !== 'Admin' || userId === currentUser.id) {
             addToast('Cannot delete yourself or insufficient permissions.', 'error');
             return;
@@ -158,9 +152,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await db.deleteUser(userId, currentUser.tenantId);
         setUsers(prev => prev.filter(u => u.id !== userId));
         addToast(`User ${userId} deleted.`, 'info');
-    };
+    }, [currentUser, addToast]);
     
-    const updateCurrentUser = async (updatedData: Partial<User>) => {
+    const updateCurrentUser = useCallback(async (updatedData: Partial<User>) => {
         if (!currentUser) return;
 
         const updatedUser = { ...currentUser, ...updatedData };
@@ -171,9 +165,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUsers(prevUsers => prevUsers.map(u => u.id === updatedUser.id ? updatedUser : u));
         
         addToast('Profile updated successfully!', 'success');
-    };
+    }, [currentUser, addToast]);
 
-    const deductCredits = async (amount: number, feature: string): Promise<boolean> => {
+    const deductCredits = useCallback(async (amount: number, feature: string): Promise<boolean> => {
         if (!currentUser) return false;
         
         if (currentUser.credits < amount) {
@@ -198,9 +192,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await db.saveCreditLog(log);
 
         return true;
-    };
+    }, [currentUser, addToast]);
 
-    const purchaseCredits = async (tier: 'small' | 'medium' | 'large') => {
+    const purchaseCredits = useCallback(async (tier: 'small' | 'medium' | 'large') => {
         if (!currentUser) return;
 
         const creditMap = { small: 5000, medium: 20000, large: 100000 };
@@ -212,9 +206,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
         
         addToast(`${amount.toLocaleString()} credits purchased successfully!`, 'success');
-    };
+    }, [currentUser, addToast]);
 
-    const changeSubscription = async (plan: User['subscriptionPlan']) => {
+    const changeSubscription = useCallback(async (plan: User['subscriptionPlan']) => {
         if (!currentUser || currentUser.subscriptionPlan === plan) return;
 
         const planCredits: Record<User['subscriptionPlan'], number> = {
@@ -238,7 +232,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setCurrentUser(updatedUser);
         setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
         addToast(`Subscription plan changed to ${plan}.`, 'success');
-    };
+    }, [currentUser, addToast]);
 
     const value = {
         currentUser,

@@ -1,13 +1,8 @@
-
-
 import React, { useState, ChangeEvent, FormEvent, useEffect } from 'react';
 import InputField from '../components/InputField';
-import type { Playlist, Station } from '../types';
+import type { Station } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import ToggleSwitch from '../components/ToggleSwitch';
-import * as db from '../services/db';
-import { useAuth } from '../contexts/AuthContext';
-import { useLocalization } from '../App';
 
 interface StationSettingsProps {
     station: Station;
@@ -16,20 +11,11 @@ interface StationSettingsProps {
 
 const StationSettings: React.FC<StationSettingsProps> = ({ station: initialStation, onSave }) => {
     const { addToast } = useToast();
-    const { currentUser } = useAuth();
-    const { t } = useLocalization();
     const [station, setStation] = useState<Station>(initialStation);
-    const [playlists, setPlaylists] = useState<Playlist[]>([]);
 
     useEffect(() => {
         setStation(initialStation);
     }, [initialStation]);
-
-    useEffect(() => {
-        if (currentUser) {
-            db.getAllPlaylists(currentUser.tenantId).then(setPlaylists);
-        }
-    }, [currentUser]);
 
     const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -65,13 +51,13 @@ const StationSettings: React.FC<StationSettingsProps> = ({ station: initialStati
     return (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
             <div className="max-w-2xl mx-auto">
-                <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">{t('settings.title')}</h2>
+                <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Station Settings</h2>
                 <form onSubmit={handleSubmit} className="space-y-6">
-                    <InputField label={t('settings.stationName.label')} name="name" type="text" value={station.name} onChange={handleChange} placeholder="e.g., Megadance Radio" />
-                    <InputField label={t('settings.stationDesc.label')} name="description" value={station.description} onChange={handleChange} placeholder="Your station's slogan or description" isTextarea />
+                    <InputField label="Station Name" name="name" type="text" value={station.name} onChange={handleChange} placeholder="e.g., Megadance Radio" />
+                    <InputField label="Station Description" name="description" value={station.description} onChange={handleChange} placeholder="Your station's slogan or description" isTextarea />
                     
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('settings.radioFormat.label')}</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Radio Format</label>
                         <fieldset className="mt-2">
                             <legend className="sr-only">Radio Format</legend>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -157,28 +143,6 @@ const StationSettings: React.FC<StationSettingsProps> = ({ station: initialStati
                         onChange={(val) => handleToggle('enableAiWebResearch', val)}
                     />
                     <p className="-mt-4 text-xs text-gray-500 dark:text-gray-400">Allows the AI announcer to search for real-time facts about songs and artists to create more varied announcements.</p>
-                    
-                     <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <h3 className="text-lg font-bold text-gray-800 dark:text-white">Cloud Broadcasting Settings</h3>
-                        <InputField label="Public Stream URL" name="streamUrl" value={station.streamUrl || ''} onChange={handleChange} placeholder="e.g., https://your-stream.com/live" />
-                        
-                        <div>
-                            <label htmlFor="failoverPlaylist" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Failover Playlist</label>
-                            <select 
-                                id="failoverPlaylist"
-                                name="failoverPlaylistId"
-                                value={station.failoverPlaylistId || ''}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700"
-                            >
-                                <option value="">-- No Failover --</option>
-                                {playlists.map(p => (
-                                    <option key={p.id} value={p.id}>{p.name}</option>
-                                ))}
-                            </select>
-                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">This playlist will automatically play if the main schedule ends or a live DJ disconnects, preventing dead air.</p>
-                        </div>
-                    </div>
 
 
                     <div>
@@ -219,7 +183,7 @@ const StationSettings: React.FC<StationSettingsProps> = ({ station: initialStati
                     <div className="pt-5">
                         <div className="flex justify-end">
                             <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-blue">
-                                {t('settings.save')}
+                                Save Settings
                             </button>
                         </div>
                     </div>

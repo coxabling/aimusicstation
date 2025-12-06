@@ -5,12 +5,10 @@ import { generateWithRetry, handleAiError } from '../services/ai';
 import { useToast } from '../contexts/ToastContext';
 import { useContent } from '../contexts/ContentContext';
 import * as db from '../services/db';
-import { ArticleHistoryItem, ArticleContent, RssFeedSettings, ClonedVoice, AudioContent, CustomAudioContent } from '../types';
+import { ArticleHistoryItem, ArticleContent, RssFeedSettings, ClonedVoice, AudioContent } from '../types';
 import Modal from '../components/Modal';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchRssFeed, RssArticle } from '../services/rss';
-import { usePlayer } from '../contexts/PlayerContext';
-import { useLocalization, Language } from '../App';
 
 type AiTool = 'article' | 'news' | 'summarizer' | 'stationId' | 'jingle' | 'ad' | 'sportsUpdate';
 
@@ -24,18 +22,6 @@ const CREDIT_COSTS = {
 };
 
 // --- AUDIO HELPERS ---
-
-const getDuration = (url: string): Promise<string> => new Promise(resolve => {
-    const audio = document.createElement('audio');
-    audio.preload = 'metadata';
-    audio.onloadedmetadata = () => {
-        const duration = audio.duration;
-        resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
-    };
-    audio.onerror = () => resolve('0:00');
-    audio.src = url;
-});
-
 
 function decode(base64: string): Uint8Array {
     const binaryString = atob(base64);
@@ -103,36 +89,6 @@ const getPersonaPrompt = (vibe: string): string => {
     }
 };
 
-const AudioVoiceSelector: React.FC<{
-    clonedVoices: ClonedVoice[];
-    selectedVoice: string;
-    onSelectVoice: (voice: string) => void;
-}> = ({ clonedVoices, selectedVoice, onSelectVoice }) => (
-    <div>
-        <label htmlFor="voice-selector" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Announcer Voice</label>
-        <select
-            id="voice-selector"
-            value={selectedVoice}
-            onChange={e => onSelectVoice(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700"
-        >
-            <optgroup label="Standard Voices">
-                <option>AI-David</option>
-                <option>AI-Sarah</option>
-                <option>AI-Ayo (African Male)</option>
-                <option>AI-Zola (African Female)</option>
-            </optgroup>
-            {clonedVoices.length > 0 && (
-                <optgroup label="Cloned Voices">
-                    {clonedVoices.map(voice => (
-                        <option key={voice.id} value={voice.name}>{voice.name}</option>
-                    ))}
-                </optgroup>
-            )}
-        </select>
-    </div>
-);
-
 const AiToolTab: React.FC<{
     label: string;
     isActive: boolean;
@@ -154,8 +110,6 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
     const { addToast } = useToast();
     const { currentUser, deductCredits } = useAuth();
     const { loadContent } = useContent();
-    const { addToQueue } = usePlayer();
-    const { t } = useLocalization();
     const [isLoading, setIsLoading] = useState(false);
     const [topic, setTopic] = useState('');
     const [generatedContent, setGeneratedContent] = useState('');
@@ -167,10 +121,6 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
     const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
     const [audioUrl, setAudioUrl] = useState<string | null>(null);
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-
-    const [isTranslating, setIsTranslating] = useState(false);
-    const [targetLang, setTargetLang] = useState<Language>('es');
-    const [translatedContent, setTranslatedContent] = useState('');
 
     useEffect(() => {
         const fetchVoices = async () => {
@@ -185,7 +135,6 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
     useEffect(() => {
         setAudioUrl(null);
         setAudioBlob(null);
-        setTranslatedContent('');
     }, [generatedContent]);
 
     useEffect(() => {
@@ -235,39 +184,6 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
         await db.deleteGeneratedArticle(id, currentUser.tenantId);
         setArticleHistory(prev => prev.filter(item => item.id !== id));
         addToast("Deleted item from history.", "info");
-    };
-
-    const handleQueueArticle = () => {
-        if (!generatedContent || !currentUser) return;
-        const newItem: ArticleContent = {
-            id: `ai-article-queue-${Date.now()}`,
-            tenantId: currentUser.tenantId,
-            type: 'Article',
-            title: topic || 'AI Generated Article',
-            content: generatedContent,
-            date: new Date().toISOString(),
-            duration: '0:00', // Placeholder
-            useAiAnnouncer: true,
-            announcerVoice: 'AI-Ayo (African Male)'
-        };
-        addToQueue([newItem]);
-        addToast(`"${newItem.title}" added to the playout queue.`, 'success');
-    };
-
-    const handleTranslate = async () => {
-        if (!generatedContent) return;
-        setIsTranslating(true);
-        setTranslatedContent('');
-        try {
-            const langName = { es: 'Spanish', fr: 'French', en: 'English' }[targetLang];
-            const prompt = `Translate the following text into ${langName}:\n\n${generatedContent}`;
-            const response = await generateWithRetry({ model: 'gemini-2.5-flash', contents: prompt });
-            setTranslatedContent(response.text);
-        } catch (error) {
-            handleAiError(error, addToast);
-        } finally {
-            setIsTranslating(false);
-        }
     };
 
     const handleGenerateAudio = async () => {
@@ -322,7 +238,19 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
         const filename = `AI Article - ${topic.substring(0, 20).trim()}.wav`;
         const audioFile = new File([audioBlob], filename, { type: 'audio/wav' });
 
-        const duration = audioUrl ? await getDuration(audioUrl) : '0:00';
+        const getDuration = (file: File): Promise<string> => new Promise(resolve => {
+            const audio = document.createElement('audio');
+            audio.preload = 'metadata';
+            audio.onloadedmetadata = () => {
+                window.URL.revokeObjectURL(audio.src);
+                const duration = audio.duration;
+                resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
+            };
+            audio.onerror = () => resolve('0:00');
+            audio.src = URL.createObjectURL(file);
+        });
+
+        const duration = await getDuration(audioFile);
 
         const newItem: AudioContent = {
             id: `audio-${Date.now()}`,
@@ -345,26 +273,6 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
         await db.saveAudioContent(newItem);
         await loadContent();
         addToast(`"${filename}" saved to your Audio Content library!`, 'success');
-    };
-
-    const handleQueueAudio = async () => {
-        if (!audioBlob || !currentUser) return;
-        const filename = `AI Article - ${topic.substring(0, 20).trim()}.wav`;
-        const url = URL.createObjectURL(audioBlob);
-        const duration = await getDuration(url);
-
-        const newItem: CustomAudioContent = {
-            id: `ai-audio-queue-${Date.now()}`,
-            tenantId: currentUser.tenantId,
-            type: 'Custom Audio',
-            title: filename,
-            artist: 'AI Article',
-            duration,
-            date: new Date().toISOString(),
-            url,
-        };
-        addToQueue([newItem]);
-        addToast(`"${filename}" added to the playout queue.`, 'success');
     };
 
     return (
@@ -391,35 +299,9 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
                 <button onClick={handleGenerate} disabled={isLoading || !topic} className="flex items-center px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400 whitespace-nowrap"><SparklesIcon className="h-4 w-4 mr-2"/>{isLoading ? 'Generating...' : `Generate (${CREDIT_COSTS.ARTICLE} Credits)`}</button>
             </div>
             <textarea value={generatedContent} onChange={e => setGeneratedContent(e.target.value)} placeholder="Your generated article will appear here..." rows={12} className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700/50"/>
-            <div className="flex justify-end space-x-2">
-                <button onClick={handleQueueArticle} disabled={!generatedContent} className="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none disabled:bg-green-400">Add to Queue</button>
+            <div className="flex justify-end">
                 <button onClick={() => onSave(topic, generatedContent)} disabled={!generatedContent} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400">Save as Article</button>
             </div>
-
-            {generatedContent && (
-                 <div className="space-y-4 pt-6 border-t border-gray-200 dark:border-gray-700">
-                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">{t('aistudio.translateScript')}</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                        <div className="md:col-span-2">
-                            <label htmlFor="target-lang" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('aistudio.translateTo')}</label>
-                            <select id="target-lang" value={targetLang} onChange={e => setTargetLang(e.target.value as Language)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700">
-                                <option value="es">Español</option>
-                                <option value="fr">Français</option>
-                            </select>
-                        </div>
-                        <button onClick={handleTranslate} disabled={isTranslating} className="flex items-center justify-center px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400 whitespace-nowrap">
-                            <SparklesIcon className="h-4 w-4 mr-2"/>
-                            {isTranslating ? 'Translating...' : t('aistudio.translate')}
-                        </button>
-                    </div>
-                    {translatedContent && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('aistudio.translation')}</label>
-                            <textarea value={translatedContent} readOnly rows={8} className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700/50"/>
-                        </div>
-                    )}
-                </div>
-            )}
 
             {generatedContent && (
                  <div className="space-y-4 pt-6 border-t border-gray-200 dark:border-gray-700">
@@ -435,9 +317,8 @@ const ArticleGenerator: React.FC<{ onSave: (title: string, content: string) => v
                     {audioUrl && (
                         <div className="space-y-4">
                             <audio controls src={audioUrl} className="w-full">Your browser does not support the audio element.</audio>
-                            <div className="flex justify-end space-x-2">
-                                <button onClick={handleQueueAudio} className="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700">Add to Queue</button>
-                                <button onClick={handleSaveAudio} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Save to Audio Library</button>
+                            <div className="flex justify-end">
+                                <button onClick={handleSaveAudio} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none">Save to Audio Library</button>
                             </div>
                         </div>
                     )}
@@ -452,7 +333,6 @@ const NewsSegmentGenerator: React.FC<{ onSave: (title: string, content: string) 
     const { currentUser, deductCredits } = useAuth();
     const { addToast } = useToast();
     const { loadContent } = useContent();
-    const { addToQueue } = usePlayer();
 
     const [rssFeeds, setRssFeeds] = useState<RssFeedSettings[]>([]);
     const [selectedFeedId, setSelectedFeedId] = useState<string>('');
@@ -615,7 +495,19 @@ Here are the articles:\n\n${articlesContent}`;
         const filename = `AI News Segment - ${new Date().toLocaleDateString()}.wav`;
         const audioFile = new File([audioBlob], filename, { type: 'audio/wav' });
 
-        const duration = audioUrl ? await getDuration(audioUrl) : '0:00';
+        const getDuration = (file: File): Promise<string> => new Promise(resolve => {
+            const audio = document.createElement('audio');
+            audio.preload = 'metadata';
+            audio.onloadedmetadata = () => {
+                window.URL.revokeObjectURL(audio.src);
+                const duration = audio.duration;
+                resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
+            };
+            audio.onerror = () => resolve('0:00');
+            audio.src = URL.createObjectURL(file);
+        });
+
+        const duration = await getDuration(audioFile);
 
         const newItem: AudioContent = {
             id: `audio-${Date.now()}`, tenantId: currentUser.tenantId, type: 'Jingle', filename,
@@ -628,43 +520,6 @@ Here are the articles:\n\n${articlesContent}`;
         await db.saveAudioContent(newItem);
         await loadContent();
         addToast(`"${filename}" saved to your Audio Content library!`, 'success');
-    };
-
-    const handleQueueAudio = async () => {
-        if (!audioBlob || !currentUser) return;
-        const filename = `AI News Segment - ${new Date().toLocaleDateString()}.wav`;
-        const url = URL.createObjectURL(audioBlob);
-        const duration = await getDuration(url);
-        const newItem: CustomAudioContent = {
-            id: `ai-audio-queue-${Date.now()}`,
-            tenantId: currentUser.tenantId,
-            type: 'Custom Audio',
-            title: filename,
-            artist: 'AI News',
-            duration,
-            date: new Date().toISOString(),
-            url,
-        };
-        addToQueue([newItem]);
-        addToast(`"${filename}" added to the playout queue.`, 'success');
-    };
-
-    const handleQueueArticle = () => {
-        if (!generatedScript || !currentUser) return;
-        const title = `News Segment - ${new Date().toLocaleDateString()}`;
-        const newItem: ArticleContent = {
-            id: `ai-news-queue-${Date.now()}`,
-            tenantId: currentUser.tenantId,
-            type: 'Article',
-            title: title,
-            content: generatedScript,
-            date: new Date().toISOString(),
-            duration: '0:00', // Placeholder
-            useAiAnnouncer: true,
-            announcerVoice: 'AI-Ayo (African Male)'
-        };
-        addToQueue([newItem]);
-        addToast(`"${title}" added to the playout queue.`, 'success');
     };
 
     return (
@@ -705,8 +560,7 @@ Here are the articles:\n\n${articlesContent}`;
                 </button>
             </div>
             <textarea value={generatedScript} readOnly placeholder="Your generated news segment script will appear here..." rows={10} className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700/50"/>
-             <div className="flex justify-end space-x-2">
-                <button onClick={handleQueueArticle} disabled={!generatedScript} className="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none disabled:bg-green-400">Add to Queue</button>
+             <div className="flex justify-end">
                 <button onClick={() => onSave(`News Segment - ${new Date().toLocaleDateString()}`, generatedScript)} disabled={!generatedScript} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400">Save as Script</button>
             </div>
 
@@ -724,9 +578,8 @@ Here are the articles:\n\n${articlesContent}`;
                     {audioUrl && (
                         <div className="space-y-4">
                             <audio controls src={audioUrl} className="w-full">Your browser does not support the audio element.</audio>
-                             <div className="flex justify-end space-x-2">
-                                <button onClick={handleQueueAudio} className="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700">Add to Queue</button>
-                                <button onClick={handleSaveAudio} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Save to Audio Library</button>
+                             <div className="flex justify-end">
+                                <button onClick={handleSaveAudio} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none">Save to Audio Library</button>
                             </div>
                         </div>
                     )}
@@ -740,7 +593,6 @@ const ContentSummarizer: React.FC<{ onSave: (title: string, content: string) => 
     const { addToast } = useToast();
     const { deductCredits, currentUser } = useAuth();
     const { loadContent } = useContent();
-    const { addToQueue } = usePlayer();
     const [isLoading, setIsLoading] = useState(false);
     const [originalContent, setOriginalContent] = useState('');
     const [summarizedContent, setSummarizedContent] = useState('');
@@ -788,10 +640,10 @@ const ContentSummarizer: React.FC<{ onSave: (title: string, content: string) => 
                 addToast("Input text is too long and has been truncated.", "info");
             }
 
-            const prompt = `Summarize the following text into a concise, engaging script suitable for a radio broadcast. The summary should capture the key points and be easy for a host to read. The output should be the summarized text only, without any introductory phrases like "Here is the summary:".\n\nTEXT:\n${contentToSummarize}`;
+            const prompt = `Summarize the following text into a concise, engaging script suitable for a radio broadcast. The summary should capture the key points and be easy for a host to read aloud.\n\nText to summarize:\n${contentToSummarize}`;
             const response = await generateWithRetry({ model: 'gemini-2.5-flash', contents: prompt });
             setSummarizedContent(response.text);
-            addToast("Content summarized!", "success");
+            addToast("Content summarized successfully!", "success");
         } catch (error) {
             handleAiError(error, addToast);
         } finally {
@@ -799,184 +651,557 @@ const ContentSummarizer: React.FC<{ onSave: (title: string, content: string) => 
         }
     };
     
-    const handleGenerateAudio = async () => { /* Similar to other generators */ };
-    const handleSaveAudio = async () => { /* Similar to other generators */ };
-    const handleQueueAudio = async () => { /* Similar to other generators */ };
-    const handleQueueArticle = () => {
-        if (!summarizedContent || !currentUser) return;
-        const newItem: ArticleContent = {
-            id: `ai-summary-queue-${Date.now()}`, tenantId: currentUser.tenantId, type: 'Article', title: 'Summarized Content',
-            content: summarizedContent, date: new Date().toISOString(), duration: '0:00', useAiAnnouncer: true, announcerVoice: selectedVoice
+    const handleGenerateAudio = async () => {
+        if (!summarizedContent) return;
+        const canProceed = await deductCredits(CREDIT_COSTS.AUDIO_GENERATION, `AI Audio Generation (Summarizer)`);
+        if (!canProceed) return;
+
+        setIsGeneratingAudio(true);
+        setAudioUrl(null);
+        setAudioBlob(null);
+
+        try {
+            const sanitizedScript = summarizedContent.trim();
+            if (!sanitizedScript) throw new Error('Empty script for TTS.');
+            
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const response = await ai.models.generateContent({
+                model: "gemini-2.5-flash-preview-tts",
+                contents: [{ parts: [{ text: sanitizedScript }] }],
+                config: {
+                    responseModalities: [Modality.AUDIO],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: getAnnouncerVoiceName(selectedVoice) } } }
+                }
+            });
+            
+            const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+            if (!base64Audio) throw new Error("TTS generation failed.");
+
+            const pcmBytes = decode(base64Audio);
+            const wavBlob = pcmToWav(pcmBytes, 24000, 1, 16);
+
+            setAudioBlob(wavBlob);
+            setAudioUrl(URL.createObjectURL(wavBlob));
+            addToast(`Audio generated for Summary!`, 'success');
+
+        } catch (error) {
+            handleAiError(error, addToast);
+        } finally {
+            setIsGeneratingAudio(false);
+        }
+    };
+
+     const handleSaveAudio = async () => {
+        if (!audioBlob || !currentUser) return;
+
+        const filename = `AI Summary - ${new Date().toLocaleDateString()}.wav`;
+        const audioFile = new File([audioBlob], filename, { type: 'audio/wav' });
+
+        const getDuration = (file: File): Promise<string> => new Promise(resolve => {
+            const audio = document.createElement('audio');
+            audio.preload = 'metadata';
+            audio.onloadedmetadata = () => {
+                window.URL.revokeObjectURL(audio.src);
+                const duration = audio.duration;
+                resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
+            };
+            audio.onerror = () => resolve('0:00');
+            audio.src = URL.createObjectURL(file);
+        });
+
+        const duration = await getDuration(audioFile);
+
+        const newItem: AudioContent = {
+            id: `audio-${Date.now()}`, tenantId: currentUser.tenantId, type: 'Jingle', filename,
+            artist: 'AI Summary', duration, genre: 'Spoken Word', announceTrack: false,
+            announcementVoice: selectedVoice, announcementWithBackgroundMusic: false,
+            dateTime: new Date().toISOString(), totalPlays: 0, lastPlayed: 'Never',
+            published: true, file: audioFile
         };
-        addToQueue([newItem]);
-        addToast(`"Summarized Content" added to the playout queue.`, 'success');
+
+        await db.saveAudioContent(newItem);
+        await loadContent();
+        addToast(`"${filename}" saved to your Audio Content library!`, 'success');
     };
 
     return (
-        <div className="space-y-4">
-            <textarea
-                value={originalContent}
-                onChange={e => setOriginalContent(e.target.value)}
-                placeholder="Paste any text here to summarize it into a radio script..."
-                rows={8}
-                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
-            />
-            <div className="flex justify-end">
-                <button
-                    onClick={handleSummarize}
-                    disabled={isLoading || !originalContent}
-                    className="flex items-center px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 disabled:bg-purple-400"
-                >
-                    <SparklesIcon className="h-4 w-4 mr-2" />
-                    {isLoading ? 'Summarizing...' : `Summarize (${CREDIT_COSTS.SUMMARIZER} Credits)`}
-                </button>
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                    <label className="text-lg font-semibold text-gray-800 dark:text-white">Original Text</label>
+                    <textarea value={originalContent} onChange={e => setOriginalContent(e.target.value)} placeholder="Paste the content you want to summarize here..." rows={12} className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"/>
+                </div>
+                <div className="space-y-2">
+                    <label className="text-lg font-semibold text-gray-800 dark:text-white">Summarized Script</label>
+                    <textarea value={summarizedContent} readOnly placeholder="The summarized, radio-friendly script will appear here..." rows={12} className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700/50"/>
+                </div>
+                <div className="md:col-span-2 flex justify-end space-x-3">
+                    <button onClick={handleSummarize} disabled={isLoading || !originalContent} className="flex items-center px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400 whitespace-nowrap"><SparklesIcon className="h-4 w-4 mr-2"/>{isLoading ? 'Summarizing...' : `Summarize with AI (${CREDIT_COSTS.SUMMARIZER} Credits)`}</button>
+                    <button onClick={() => onSave('Summarized Content', summarizedContent)} disabled={!summarizedContent} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400">Save as Article</button>
+                </div>
             </div>
-            <textarea
-                value={summarizedContent}
-                readOnly
-                placeholder="Your summarized script will appear here..."
-                rows={8}
-                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700/50"
-            />
-             <div className="flex justify-end space-x-2">
-                <button onClick={handleQueueArticle} disabled={!summarizedContent} className="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 disabled:bg-green-400">Add to Queue</button>
-                <button onClick={() => onSave('Summarized Content', summarizedContent)} disabled={!summarizedContent} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 disabled:bg-blue-400">Save as Article</button>
-            </div>
+            {summarizedContent && (
+                 <div className="space-y-4 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">Generate Audio from Summary</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                        <AudioVoiceSelector clonedVoices={clonedVoices} selectedVoice={selectedVoice} onSelectVoice={setSelectedVoice}/>
+                        <button onClick={handleGenerateAudio} disabled={isGeneratingAudio} className="flex items-center justify-center px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400 whitespace-nowrap">
+                            <SparklesIcon className="h-4 w-4 mr-2"/>
+                            {isGeneratingAudio ? 'Generating...' : `Generate Audio (${CREDIT_COSTS.AUDIO_GENERATION} Credits)`}
+                        </button>
+                    </div>
+
+                    {audioUrl && (
+                        <div className="space-y-4">
+                            <audio controls src={audioUrl} className="w-full"></audio>
+                             <div className="flex justify-end">
+                                <button onClick={handleSaveAudio} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Save to Audio Library</button>
+                            </div>
+                        </div>
+                    )}
+                 </div>
+            )}
         </div>
     );
 };
 
+const AudioVoiceSelector: React.FC<{clonedVoices: ClonedVoice[], selectedVoice: string, onSelectVoice: (v: string) => void}> = ({clonedVoices, selectedVoice, onSelectVoice}) => (
+    <div>
+        <label htmlFor="voice" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Voice</label>
+        <select id="voice" name="voice" value={selectedVoice} onChange={e => onSelectVoice(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700">
+            <optgroup label="Standard Voices">
+                <option>AI-David</option><option>AI-Sarah</option><option>AI-Ayo (African Male)</option><option>AI-Zola (African Female)</option>
+            </optgroup>
+            {clonedVoices.length > 0 && (
+                <optgroup label="Cloned Voices">
+                    {clonedVoices.map(voice => <option key={voice.id} value={voice.name}>{voice.name}</option>)}
+                </optgroup>
+            )}
+        </select>
+    </div>
+);
+
+
 const ScriptGenerator: React.FC<{
-    onSave: (title: string, content: string, type: 'Ad' | 'Jingle' | 'StationID' | 'Promo') => void;
-}> = ({ onSave }) => {
-    const { stationSettings, deductCredits } = useAuth();
+    type: 'Station ID' | 'Jingle' | 'Ad';
+    onSave: (title: string, content: string) => void;
+}> = ({ type, onSave }) => {
     const { addToast } = useToast();
+    const { currentUser, deductCredits } = useAuth();
+    const { loadContent } = useContent();
     const [isLoading, setIsLoading] = useState(false);
-    const [scriptType, setScriptType] = useState<'stationId' | 'jingle' | 'ad' | 'promo'>('stationId');
     const [prompt, setPrompt] = useState('');
     const [generatedScript, setGeneratedScript] = useState('');
 
+    const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>([]);
+    const [selectedVoice, setSelectedVoice] = useState('AI-David');
+    const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
+    const [audioUrl, setAudioUrl] = useState<string | null>(null);
+    const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+    
+    useEffect(() => {
+        const fetchVoices = async () => {
+            if (currentUser) {
+                const voices = await db.getAllClonedVoices(currentUser.tenantId);
+                setClonedVoices(voices.filter(v => v.status === 'Ready'));
+            }
+        };
+        fetchVoices();
+    }, [currentUser]);
+
+    useEffect(() => {
+        setAudioUrl(null);
+        setAudioBlob(null);
+    }, [generatedScript]);
+    
+    useEffect(() => {
+        const currentUrl = audioUrl;
+        return () => {
+            if (currentUrl) {
+                URL.revokeObjectURL(currentUrl);
+            }
+        };
+    }, [audioUrl]);
+    
+    const placeholderText: Record<typeof type, string> = {
+        'Station ID': 'e.g., A high-energy station ID for "Megadance Radio", mentioning "non-stop dance hits".',
+        'Jingle': 'e.g., A catchy, upbeat jingle for the "Morning Drive" show.',
+        'Ad': 'e.g., A 30-second ad for a new coffee shop called "The Daily Grind". Mention their specialty lattes.'
+    };
+    
     const handleGenerate = async () => {
         if (!prompt) return;
+
         const canProceed = await deductCredits(CREDIT_COSTS.SCRIPT, 'Script Generation');
         if (!canProceed) return;
+
         setIsLoading(true);
+        setGeneratedScript('');
         try {
-            const fullPrompt = `You are a professional radio script writer for a station named "${stationSettings.name}". The station's vibe is "${stationSettings.vibe || 'energetic'}".
-Write a short, punchy script for a "${scriptType}" based on this prompt: "${prompt}".
-The script should be under 15 seconds when read aloud.
-Return only the script text.`;
-            const response = await generateWithRetry({ model: 'gemini-2.5-flash', contents: fullPrompt });
+            const savedSettings = localStorage.getItem('stationSettings');
+            const stationVibe = savedSettings ? (JSON.parse(savedSettings).vibe || 'Default') : 'Default';
+            
+            const persona = getPersonaPrompt(stationVibe);
+            const aiPrompt = `${persona} Write a script for a radio ${type}. The user's request is: "${prompt}".
+The script should be creative, concise, and suitable for being recorded for radio.
+The text itself should convey the intended emotion and energy, without using special cues like parentheses. For example, instead of writing "(Upbeat) Time for our sponsor!", you should write something like "And now, a quick word from our friends at...".
+Format the script clearly.`;
+            const response = await generateWithRetry({ model: 'gemini-2.5-flash', contents: aiPrompt });
             setGeneratedScript(response.text);
-        } catch (error) { handleAiError(error, addToast); } finally { setIsLoading(false); }
+            addToast(`Script for ${type} generated successfully!`, "success");
+        } catch (error) {
+            handleAiError(error, addToast);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
+    const handleGenerateAudio = async () => {
+        if (!generatedScript) return;
+        const canProceed = await deductCredits(CREDIT_COSTS.AUDIO_GENERATION, `AI Audio Generation (${type})`);
+        if (!canProceed) return;
+
+        setIsGeneratingAudio(true);
+        setAudioUrl(null);
+        setAudioBlob(null);
+
+        try {
+            const sanitizedScript = generatedScript.replace(/\(.*?\)/g, '').replace(/\[.*?\]/g, '').trim();
+            if (!sanitizedScript) {
+                addToast('Script is empty after removing cues.', 'error');
+                throw new Error('Empty script for TTS.');
+            }
+
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const response = await ai.models.generateContent({
+                model: "gemini-2.5-flash-preview-tts",
+                contents: [{ parts: [{ text: sanitizedScript }] }],
+                config: {
+                    responseModalities: [Modality.AUDIO],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: getAnnouncerVoiceName(selectedVoice) }
+                        }
+                    }
+                }
+            });
+            
+            const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+            if (!base64Audio) {
+                throw new Error("TTS generation failed to return audio data.");
+            }
+
+            const pcmBytes = decode(base64Audio);
+            const wavBlob = pcmToWav(pcmBytes, 24000, 1, 16);
+
+            setAudioBlob(wavBlob);
+            setAudioUrl(URL.createObjectURL(wavBlob));
+            addToast(`Audio generated for ${type}!`, 'success');
+
+        } catch (error) {
+            handleAiError(error, addToast);
+        } finally {
+            setIsGeneratingAudio(false);
+        }
+    };
+    
+    const handleSaveAudio = async () => {
+        if (!audioBlob || !currentUser) return;
+
+        const filename = `AI ${type} - ${prompt.substring(0, 20).trim()}.wav`;
+        const audioFile = new File([audioBlob], filename, { type: 'audio/wav' });
+
+        const getDuration = (file: File): Promise<string> => {
+            return new Promise(resolve => {
+                const audio = document.createElement('audio');
+                audio.preload = 'metadata';
+                audio.onloadedmetadata = () => {
+                    window.URL.revokeObjectURL(audio.src);
+                    const duration = audio.duration;
+                    const minutes = Math.floor(duration / 60);
+                    const seconds = Math.round(duration % 60);
+                    resolve(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+                };
+                audio.onerror = () => resolve('0:00');
+                audio.src = URL.createObjectURL(file);
+            });
+        };
+
+        const duration = await getDuration(audioFile);
+
+        const newItem: AudioContent = {
+            id: `audio-${Date.now()}`,
+            tenantId: currentUser.tenantId,
+            type: type === 'Ad' ? 'Ad' : 'Jingle',
+            filename,
+            artist: `AI Generated (${type})`,
+            duration,
+            genre: 'Broadcast',
+            announceTrack: false,
+            announcementVoice: selectedVoice,
+            announcementWithBackgroundMusic: false,
+            dateTime: new Date().toISOString(),
+            totalPlays: 0,
+            lastPlayed: 'Never',
+            published: true,
+            file: audioFile
+        };
+
+        await db.saveAudioContent(newItem);
+        await loadContent();
+        addToast(`"${filename}" saved to your Audio Content library!`, 'success');
+    };
+    
     return (
-        <div className="space-y-4">
-            {/* Form elements for script type, prompt, etc. */}
-            <p>Script Generator UI goes here...</p>
+         <div className="space-y-4">
+            <textarea value={prompt} onChange={e => setPrompt(e.target.value)} placeholder={placeholderText[type]} rows={3} className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"/>
+            <div className="flex justify-end">
+                <button onClick={handleGenerate} disabled={isLoading || !prompt} className="flex items-center px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400 whitespace-nowrap"><SparklesIcon className="h-4 w-4 mr-2"/>{isLoading ? 'Generating...' : `Generate ${type} (${CREDIT_COSTS.SCRIPT} Credits)`}</button>
+            </div>
+            <textarea value={generatedScript} readOnly placeholder={`Generated ${type} script will appear here...`} rows={10} className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700/50"/>
+            <div className="flex justify-end">
+                 <button onClick={() => onSave(`Script: ${type} - ${prompt.substring(0,20)}...`, generatedScript)} disabled={!generatedScript} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400">Save as Script</button>
+            </div>
+
+            {generatedScript && (
+                 <div className="space-y-4 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">Generate Audio</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                        <AudioVoiceSelector clonedVoices={clonedVoices} selectedVoice={selectedVoice} onSelectVoice={setSelectedVoice}/>
+                        <button onClick={handleGenerateAudio} disabled={isGeneratingAudio} className="flex items-center justify-center px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400 whitespace-nowrap">
+                            <SparklesIcon className="h-4 w-4 mr-2"/>
+                            {isGeneratingAudio ? 'Generating...' : `Generate Audio (${CREDIT_COSTS.AUDIO_GENERATION} Credits)`}
+                        </button>
+                    </div>
+
+                    {audioUrl && (
+                        <div className="space-y-4">
+                            <audio controls src={audioUrl} className="w-full">Your browser does not support the audio element.</audio>
+                             <div className="flex justify-end">
+                                <button onClick={handleSaveAudio} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none">Save to Audio Library</button>
+                            </div>
+                        </div>
+                    )}
+                 </div>
+            )}
         </div>
     );
 };
 
 const SportsUpdateGenerator: React.FC<{ onSave: (title: string, content: string) => void; }> = ({ onSave }) => {
-     const { addToast } = useToast();
-     const { deductCredits } = useAuth();
-     const [isLoading, setIsLoading] = useState(false);
-     const [topic, setTopic] = useState('');
-     const [generatedScript, setGeneratedScript] = useState('');
+    const { addToast } = useToast();
+    const { currentUser, deductCredits } = useAuth();
+    const { loadContent } = useContent();
+    const [isLoading, setIsLoading] = useState(false);
+    const [query, setQuery] = useState('');
+    const [generatedScript, setGeneratedScript] = useState('');
+    
+    // Audio Generation State
+    const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>([]);
+    const [selectedVoice, setSelectedVoice] = useState('AI-David');
+    const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
+    const [audioUrl, setAudioUrl] = useState<string | null>(null);
+    const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
 
-     const handleGenerate = async () => {
-        if (!topic) return;
+     useEffect(() => {
+        const fetchVoices = async () => {
+            if (currentUser) {
+                const voices = await db.getAllClonedVoices(currentUser.tenantId);
+                setClonedVoices(voices.filter(v => v.status === 'Ready'));
+            }
+        };
+        fetchVoices();
+    }, [currentUser]);
+
+    useEffect(() => {
+        setAudioUrl(null);
+        setAudioBlob(null);
+    }, [generatedScript]);
+    
+    useEffect(() => {
+        const currentUrl = audioUrl;
+        return () => { if (currentUrl) URL.revokeObjectURL(currentUrl); };
+    }, [audioUrl]);
+
+    const handleGenerate = async () => {
+        if (!query) return;
         const canProceed = await deductCredits(CREDIT_COSTS.SPORTS_UPDATE, 'Sports Update Generation');
         if (!canProceed) return;
+
         setIsLoading(true);
+        setGeneratedScript('');
         try {
-            const prompt = `You are a sports radio announcer. Generate a short, exciting sports update script about "${topic}". Use web search to find the latest results, scores, or news.`;
+            const prompt = `You are a professional radio sports reporter. Your task is to provide an exciting and concise sports update suitable for a live broadcast. Use your search tool to find the latest results, key highlights, or upcoming game information for the following query: "${query}". Format the script for easy reading on air.`;
             const response = await generateWithRetry({ model: 'gemini-2.5-flash', contents: prompt, config: { tools: [{ googleSearch: {} }] } });
             setGeneratedScript(response.text);
-        } catch (error) { handleAiError(error, addToast); } finally { setIsLoading(false); }
+            addToast("Sports update generated successfully!", "success");
+        } catch (error) {
+            handleAiError(error, addToast);
+        } finally {
+            setIsLoading(false);
+        }
     };
-    
+
+    const handleGenerateAudio = async () => {
+        if (!generatedScript) return;
+        const canProceed = await deductCredits(CREDIT_COSTS.AUDIO_GENERATION, `AI Audio Generation (Sports)`);
+        if (!canProceed) return;
+
+        setIsGeneratingAudio(true);
+        setAudioUrl(null);
+        setAudioBlob(null);
+
+        try {
+            const sanitizedScript = generatedScript.trim();
+            if (!sanitizedScript) throw new Error('Empty script for TTS.');
+            
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const response = await ai.models.generateContent({
+                model: "gemini-2.5-flash-preview-tts",
+                contents: [{ parts: [{ text: sanitizedScript }] }],
+                config: {
+                    responseModalities: [Modality.AUDIO],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: getAnnouncerVoiceName(selectedVoice) } } }
+                }
+            });
+            
+            const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+            if (!base64Audio) throw new Error("TTS generation failed.");
+
+            const pcmBytes = decode(base64Audio);
+            const wavBlob = pcmToWav(pcmBytes, 24000, 1, 16);
+
+            setAudioBlob(wavBlob);
+            setAudioUrl(URL.createObjectURL(wavBlob));
+            addToast(`Audio generated for Sports Update!`, 'success');
+        } catch (error) {
+            handleAiError(error, addToast);
+        } finally {
+            setIsGeneratingAudio(false);
+        }
+    };
+
+    const handleSaveAudio = async () => {
+        if (!audioBlob || !currentUser) return;
+        const filename = `AI Sports Update - ${query}.wav`;
+        const audioFile = new File([audioBlob], filename, { type: 'audio/wav' });
+
+        const getDuration = (file: File): Promise<string> => new Promise(resolve => {
+            const audio = document.createElement('audio');
+            audio.preload = 'metadata';
+            audio.onloadedmetadata = () => {
+                window.URL.revokeObjectURL(audio.src);
+                resolve(`${Math.floor(audio.duration / 60)}:${Math.round(audio.duration % 60).toString().padStart(2, '0')}`);
+            };
+            audio.onerror = () => resolve('0:00');
+            audio.src = URL.createObjectURL(file);
+        });
+
+        const duration = await getDuration(audioFile);
+        const newItem: AudioContent = {
+            id: `audio-${Date.now()}`, tenantId: currentUser.tenantId, type: 'Jingle', filename,
+            artist: 'AI Sports', duration, genre: 'Sports', announceTrack: false,
+            announcementVoice: selectedVoice, announcementWithBackgroundMusic: false,
+            dateTime: new Date().toISOString(), totalPlays: 0, lastPlayed: 'Never',
+            published: true, file: audioFile
+        };
+
+        await db.saveAudioContent(newItem);
+        await loadContent();
+        addToast(`"${filename}" saved to your Audio Content library!`, 'success');
+    };
+
     return (
         <div className="space-y-4">
             <div className="flex items-center space-x-2">
-                <input type="text" value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g., latest premier league results" className="flex-grow px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md" />
-                <button onClick={handleGenerate} disabled={isLoading || !topic} className="flex items-center px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg"><TrophyIcon className="mr-2"/>{isLoading ? 'Searching...' : `Generate (${CREDIT_COSTS.SPORTS_UPDATE} Credits)`}</button>
+                <input type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="Enter a team, league, or sport..." className="flex-grow px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700" />
+                <button onClick={handleGenerate} disabled={isLoading || !query} className="flex items-center px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400 whitespace-nowrap"><SparklesIcon className="h-4 w-4 mr-2"/>{isLoading ? 'Generating...' : `Generate (${CREDIT_COSTS.SPORTS_UPDATE} Credits)`}</button>
             </div>
-            <textarea value={generatedScript} readOnly rows={10} className="w-full p-3 border dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700/50" />
-            <div className="flex justify-end">
-                <button onClick={() => onSave(`Sports: ${topic}`, generatedScript)} disabled={!generatedScript} className="px-4 py-2 bg-brand-blue text-white rounded-lg">Save as Script</button>
+            <textarea value={generatedScript} readOnly placeholder="Your generated sports update will appear here..." rows={12} className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700/50"/>
+             <div className="flex justify-end">
+                 <button onClick={() => onSave(`Sports Update: ${query}`, generatedScript)} disabled={!generatedScript} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400">Save as Script</button>
             </div>
+             {generatedScript && (
+                 <div className="space-y-4 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">Generate Audio</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                        <AudioVoiceSelector clonedVoices={clonedVoices} selectedVoice={selectedVoice} onSelectVoice={setSelectedVoice}/>
+                        <button onClick={handleGenerateAudio} disabled={isGeneratingAudio} className="flex items-center justify-center px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400 whitespace-nowrap">
+                            <SparklesIcon className="h-4 w-4 mr-2"/>
+                            {isGeneratingAudio ? 'Generating...' : `Generate Audio (${CREDIT_COSTS.AUDIO_GENERATION} Credits)`}
+                        </button>
+                    </div>
+                    {audioUrl && (
+                        <div className="space-y-4">
+                            <audio controls src={audioUrl} className="w-full"></audio>
+                             <div className="flex justify-end">
+                                <button onClick={handleSaveAudio} className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Save to Audio Library</button>
+                            </div>
+                        </div>
+                    )}
+                 </div>
+            )}
         </div>
     );
 };
 
 
 const AIContentStudio: React.FC = () => {
+    const [activeTool, setActiveTool] = useState<AiTool>('article');
     const { addContentItem } = useContent();
     const { addToast } = useToast();
-    const [activeTool, setActiveTool] = useState<AiTool>('article');
 
     const handleSave = (title: string, content: string) => {
         const newItem: Partial<ArticleContent> = {
             type: 'Article',
             title: title,
             content: content,
-            useAiAnnouncer: true
+            useAiAnnouncer: true,
+            announcerVoice: 'AI-Ayo (African Male)'
         };
         addContentItem(newItem);
-        addToast(`"${title}" saved to Content Library.`, 'success');
+        addToast(`"${title}" saved to your Content Library.`, 'success');
     };
     
-    const handleSaveScript = (title: string, content: string, type: 'Ad' | 'Jingle' | 'StationID' | 'Promo') => {
-        // Here we would create an AudioContent item, but first we need to generate audio
-        // For now, we'll save it as an Article-type script
-        handleSave(`${type}: ${title}`, content);
-        addToast("Script saved. Go to its 'Edit' page to generate audio.", 'info');
-    };
-
-    const renderTool = () => {
-        switch (activeTool) {
+    const renderActiveTool = () => {
+        switch(activeTool) {
             case 'article': return <ArticleGenerator onSave={handleSave} />;
             case 'news': return <NewsSegmentGenerator onSave={handleSave} />;
             case 'summarizer': return <ContentSummarizer onSave={handleSave} />;
             case 'sportsUpdate': return <SportsUpdateGenerator onSave={handleSave} />;
-            // case 'stationId':
-            // case 'jingle':
-            // case 'ad':
-            //     return <ScriptGenerator onSave={handleSaveScript} />;
-            default: return <p>This tool is under construction.</p>;
+            case 'stationId': return <ScriptGenerator type="Station ID" onSave={handleSave} />;
+            case 'jingle': return <ScriptGenerator type="Jingle" onSave={handleSave} />;
+            case 'ad': return <ScriptGenerator type="Ad" onSave={handleSave} />;
+            default: return null;
         }
-    };
-    
-    const tabs: { id: AiTool, label: string }[] = [
-        { id: 'article', label: 'Article Generator' },
-        { id: 'news', label: 'News Segment' },
-        { id: 'summarizer', label: 'Content Summarizer' },
-        { id: 'sportsUpdate', label: 'Sports Update' },
-        // { id: 'stationId', label: 'Station ID' },
-        // { id: 'jingle', label: 'Jingle/Ad Script' },
-    ];
+    }
 
     return (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-            <div className="flex items-center space-x-3 mb-2">
-                <SparklesIcon />
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-white">AI Content Studio</h2>
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                <div>
+                    <h2 className="text-2xl font-bold text-gray-800 dark:text-white">AI Content Studio</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Leverage generative AI to create and repurpose content for your station.</p>
+                </div>
             </div>
-             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Your creative hub for generating broadcast-ready content, from news articles to custom jingles.</p>
             
             <div className="border-b border-gray-200 dark:border-gray-700">
                 <nav className="-mb-px flex space-x-2 sm:space-x-6 overflow-x-auto" aria-label="Tabs">
-                    {tabs.map(tab => (
-                        <AiToolTab key={tab.id} label={tab.label} isActive={activeTool === tab.id} onClick={() => setActiveTool(tab.id)} />
-                    ))}
+                    <AiToolTab label="Article Generator" isActive={activeTool === 'article'} onClick={() => setActiveTool('article')} />
+                    <AiToolTab label="News Segment" isActive={activeTool === 'news'} onClick={() => setActiveTool('news')} />
+                    <AiToolTab label="Summarizer" isActive={activeTool === 'summarizer'} onClick={() => setActiveTool('summarizer')} />
+                    <AiToolTab label="Sports Update" isActive={activeTool === 'sportsUpdate'} onClick={() => setActiveTool('sportsUpdate')} />
+                    <AiToolTab label="Station ID" isActive={activeTool === 'stationId'} onClick={() => setActiveTool('stationId')} />
+                    <AiToolTab label="Jingle" isActive={activeTool === 'jingle'} onClick={() => setActiveTool('jingle')} />
+                    <AiToolTab label="Ad Script" isActive={activeTool === 'ad'} onClick={() => setActiveTool('ad')} />
                 </nav>
             </div>
             
             <div className="mt-6">
-                {renderTool()}
+                {renderActiveTool()}
             </div>
         </div>
     );

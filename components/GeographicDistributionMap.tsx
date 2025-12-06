@@ -84,24 +84,16 @@ const GeographicDistributionMap: React.FC<GeographicDistributionMapProps> = ({ d
 
         layerGroupRef.current.clearLayers();
 
-        // FIX: Ensure maxListeners is correctly calculated as a number.
-        let maxListeners = 1; // Default to 1 to prevent division by zero
-        for (const val of Object.values(data)) {
-            const numVal = Number(val); // Explicitly cast to Number
-            if (!isNaN(numVal) && numVal > maxListeners) {
-                maxListeners = numVal;
-            }
-        }
-        
+        // FIX: Explicitly cast the result of Object.values to number[] to ensure correct type inference.
+        const maxListeners = (Object.values(data) as number[]).reduce((max, val) => Math.max(max, val || 0), 1);
+
         Object.entries(data).forEach(([code, count]) => {
             const coords = countryCoordinates[code];
             if (!coords) return;
 
+            // FIX: Ensure `count` is treated as a number.
             const numericCount = Number(count) || 0;
-            // The radius calculation seems reasonable for visual scaling.
-            // Using a minimum radius to ensure very small counts are still visible.
-            const radius = Math.max(50000, Math.sqrt(numericCount / maxListeners) * 1000000); // Scale 10^6 meters = 1000km
-
+            const radius = Math.max(50000, Math.sqrt(numericCount / maxListeners) * 1000000);
             const isSelected = selectedCountry === code;
 
             const circle = L.circle([coords.lat, coords.lng], {

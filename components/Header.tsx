@@ -1,11 +1,8 @@
 
-
 import React from 'react';
-import { MenuIcon, SunIcon, MoonIcon, CheckIcon, BroadcastIcon, GlobeIcon } from './icons';
-import type { Page, Theme, Language } from '../App';
+import { MenuIcon, SunIcon, MoonIcon, CheckIcon } from './icons';
+import type { Page, Theme } from '../App';
 import { useAuth } from '../contexts/AuthContext';
-import ActionHub from './ActionHub';
-import { useLocalization } from '../App';
 
 interface HeaderProps {
     title: string;
@@ -13,21 +10,11 @@ interface HeaderProps {
     theme: Theme;
     setTheme: (theme: Theme) => void;
     setActivePage: (page: Page) => void;
-    onActionTrigger: (page: Page, trigger: string) => void;
-    onGoLiveClick: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ title, onMenuClick, theme, setTheme, setActivePage, onActionTrigger, onGoLiveClick }) => {
+const Header: React.FC<HeaderProps> = ({ title, onMenuClick, theme, setTheme, setActivePage }) => {
     const { currentUser, users, switchUser, logout } = useAuth();
-    const { language, setLanguage, t } = useLocalization();
     const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
-    const [isLangDropdownOpen, setIsLangDropdownOpen] = React.useState(false);
-
-    const languages: Record<Language, string> = {
-        en: 'English',
-        es: 'Español',
-        fr: 'Français',
-    };
 
     const toggleTheme = () => {
         setTheme(theme === 'light' ? 'dark' : 'light');
@@ -43,15 +30,6 @@ const Header: React.FC<HeaderProps> = ({ title, onMenuClick, theme, setTheme, se
             </div>
             
             <div className="flex items-center space-x-4">
-                 <button 
-                    onClick={onGoLiveClick}
-                    className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-red-500 transition-colors"
-                >
-                    <BroadcastIcon />
-                    <span>Go Live</span>
-                </button>
-                <ActionHub onActionTrigger={onActionTrigger} onNavigate={setActivePage} />
-
                  {/* User Switcher Dropdown */}
                  <div className="relative">
                     <button
@@ -96,32 +74,6 @@ const Header: React.FC<HeaderProps> = ({ title, onMenuClick, theme, setTheme, se
                                 </button>
                             ))}
                         </div>
-                    )}
-                </div>
-
-                {/* Language Switcher */}
-                <div className="relative">
-                    <button
-                        onClick={() => setIsLangDropdownOpen(!isLangDropdownOpen)}
-                        className="p-2 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-blue"
-                        aria-label="Switch language"
-                    >
-                        <GlobeIcon />
-                    </button>
-                    {isLangDropdownOpen && (
-                         <div className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-700 rounded-md shadow-lg py-1 z-20">
-                             <p className="px-4 pt-1 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">{t('header.switchLanguage')}</p>
-                             {Object.keys(languages).map((langCode) => (
-                                 <button
-                                     key={langCode}
-                                     onClick={() => { setLanguage(langCode as Language); setIsLangDropdownOpen(false); }}
-                                     className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 flex justify-between items-center"
-                                 >
-                                     <span>{languages[langCode as Language]}</span>
-                                     {language === langCode && <CheckIcon className="h-4 w-4 text-brand-blue" />}
-                                 </button>
-                             ))}
-                         </div>
                     )}
                 </div>
 

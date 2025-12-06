@@ -2,21 +2,15 @@ import React, { createContext, useState, useContext, ReactNode, useCallback } fr
 
 export type ToastType = 'success' | 'error' | 'info';
 
-export interface ToastAction {
-  label: string;
-  onClick: () => void;
-}
-
 export interface Toast {
   id: number;
   message: string;
   type: ToastType;
-  action?: ToastAction;
 }
 
 interface ToastContextType {
   toasts: Toast[];
-  addToast: (message: string, type: ToastType, action?: ToastAction) => void;
+  addToast: (message: string, type: ToastType) => void;
   removeToast: (id: number) => void;
 }
 
@@ -33,9 +27,9 @@ export const useToast = () => {
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const addToast = useCallback((message: string, type: ToastType, action?: ToastAction) => {
+  const addToast = useCallback((message: string, type: ToastType) => {
     const id = Date.now();
-    setToasts(prevToasts => [...prevToasts, { id, message, type, action }]);
+    setToasts(prevToasts => [...prevToasts, { id, message, type }]);
   }, []);
 
   const removeToast = useCallback((id: number) => {

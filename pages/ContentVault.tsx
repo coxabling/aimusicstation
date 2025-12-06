@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { vaultContent, vaultCategories, VaultContentItem, mapVaultItemToAudioContent } from '../services/vaultContent';
 import * as db from '../services/db';
@@ -8,7 +10,6 @@ import { PlayCircleIcon, PauseCircleIcon, CheckIcon, DownloadIcon, SparklesIcon 
 import { useAuth } from '../contexts/AuthContext';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { handleAiError } from '../services/ai';
-import { useContent } from '../contexts/ContentContext';
 
 // --- AUDIO HELPER FUNCTIONS ---
 
@@ -57,11 +58,13 @@ const getDuration = (url: string): Promise<string> => new Promise(resolve => {
     const audio = document.createElement('audio');
     audio.preload = 'metadata';
     audio.onloadedmetadata = () => {
+        window.URL.revokeObjectURL(audio.src);
         const duration = audio.duration;
         resolve(`${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`);
     };
     audio.onerror = () => {
         resolve('0:05'); // fallback for short clips
+        URL.revokeObjectURL(audio.src); 
     }
     audio.src = url;
 });
@@ -88,7 +91,6 @@ const ContentVault: React.FC = () => {
     const { currentItem, playbackState, isPreviewing, playPreview } = usePlayer();
     const isPlaying = playbackState === 'playing';
     const { currentUser, deductCredits } = useAuth();
-    const { loadContent } = useContent();
 
     const loadImportedContent = useCallback(async () => {
         if (!currentUser) return;
@@ -307,8 +309,7 @@ const ContentVault: React.FC = () => {
         };
     
         await db.saveAudioContent(newItem);
-        await loadContent(); // Refresh the main content library
-        await loadImportedContent(); // Refresh the vault's view of imported items
+        await loadImportedContent();
         addToast(`"${filename}" saved to your Audio Content library!`, 'success');
     
         setAiPrompt('');

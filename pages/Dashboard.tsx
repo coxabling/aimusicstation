@@ -1,34 +1,24 @@
 
-
 import React, { useState, useEffect } from 'react';
-import { Page } from '../App';
-import { RadioIcon, SparklesIcon, MusicIcon, DocumentTextIcon, ScheduleIcon, PlaylistIcon, DollarSignIcon, LinkIcon } from '../components/icons';
+import { RadioIcon, SparklesIcon, MusicIcon, DocumentTextIcon, ScheduleIcon, PlaylistIcon, DollarSignIcon } from '../components/icons';
 import StatCard from '../components/StatCard';
 import { vaultContent, VaultContentItem, mapVaultItemToAudioContent } from '../services/vaultContent';
 import * as db from '../services/db';
 import { generateWithRetry } from '../services/ai';
 import { useToast } from '../contexts/ToastContext';
-import { AudioContent, isPlayableContent, Playlist, StreamStatus } from '../types';
+import { AudioContent, isPlayableContent, Playlist } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useContent } from '../contexts/ContentContext';
-import { useLocalization } from '../App';
 
-interface DashboardProps {
-    setActivePage: (page: Page) => void;
-}
-
-const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
-    const { stationSettings, saveStationSettings, currentUser, deductCredits } = useAuth();
+const Dashboard: React.FC = () => {
+    const { stationSettings, saveStationSettings, currentUser } = useAuth();
     const { addToast } = useToast();
-    const { currentItem, playoutQueue, currentQueueIndex, isPreviewing, streamStatus } = usePlayer();
+    const { currentItem, playoutQueue, currentQueueIndex, isPreviewing } = usePlayer();
     const { contentItems, audioContentItems } = useContent();
-    const { t } = useLocalization();
 
     const [playlists, setPlaylists] = useState<Playlist[]>([]);
     const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(true);
-    const [isGeneratingReport, setIsGeneratingReport] = useState(false);
-    const REPORT_COST = 50;
 
     const handleVibeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         if (currentUser?.role !== 'Admin') return;
@@ -128,66 +118,6 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
         await db.saveAudioContent(newItem);
         addToast(`"${item.filename}" added to your Audio Content!`, 'success');
     };
-
-    const handleGenerateReport = async () => {
-        if (!currentUser) return;
-        
-        const canProceed = await deductCredits(REPORT_COST, 'Station Health Report');
-        if (!canProceed) return;
-
-        setIsGeneratingReport(true);
-        addToast('Generating Station Health Report... this may take a moment.', 'info');
-        try {
-            const [submissions, campaigns, clockwheels] = await Promise.all([
-                db.getAllSubmissions(currentUser.tenantId),
-                db.getAllCampaigns(currentUser.tenantId),
-                db.getAllClockwheels(currentUser.tenantId)
-            ]);
-
-            const musicGenres = [...new Set(audioContentItems.filter(i => i.type === 'Music' && i.genre).map(i => i.genre))];
-            const songRequests = submissions.filter(s => s.type === 'Song Request').map(s => s.message);
-
-            const prompt = `You are an expert radio programming consultant. Analyze the following data for an online radio station and provide 3-4 actionable insights in a markdown list format. Identify both problems and opportunities.
-
-**Station Data:**
-- Total Music Tracks: ${audioContentItems.filter(i => i.type === 'Music').length}
-- Total Jingles/Stingers: ${audioContentItems.filter(i => i.type === 'Jingle').length}
-- Total Ads: ${audioContentItems.filter(i => i.type === 'Ad').length}
-- Music Library Genres: ${musicGenres.length > 0 ? musicGenres.join(', ') : 'None.'}
-- Recent Song Requests: ${songRequests.length > 0 ? songRequests.slice(0, 10).join('; ') : 'None.'}
-- Active Ad Campaigns: ${campaigns.filter(c => c.status === 'active').length}
-- Saved Show Designs (Clockwheels): ${clockwheels.length}
-- Monetization Gaps: ${clockwheels.some(c => !c.blocks.some(b => b.type === 'Ad')) ? 'At least one show design has no ad blocks.' : 'All show designs include ad blocks.'}
-
-**Your Task:**
-Based on the data, provide concrete, actionable advice. Examples:
-- "Warning: Your 'Jingles' library is empty. Broadcasts may sound repetitive. Consider adding assets from the Content Vault."
-- "Opportunity: Your listeners are requesting a lot of Synthwave. Consider creating a dedicated '80s Power Hour' using the Show Designer to capitalize on this trend."
-- "Notice: Your 'Morning Drive' clockwheel has no ad blocks scheduled. This is a missed monetization opportunity."
-
-Format your response as a markdown list, with each item starting with a bolded title (e.g., "**Focus on Synthwave:** ...").`;
-            
-            const response = await generateWithRetry({ model: 'gemini-2.5-pro', contents: prompt });
-            
-            await db.saveAIReport({
-                id: `report-${Date.now()}`,
-                tenantId: currentUser.tenantId,
-                date: new Date().toISOString(),
-                content: response.text,
-            });
-
-            addToast('Station Health Report is ready in your Control Room!', 'success', {
-                label: 'View Report',
-                onClick: () => setActivePage('controlRoom')
-            });
-
-        } catch (error) {
-            console.error('Failed to generate station health report', error);
-            addToast('An error occurred while generating the report.', 'error');
-        } finally {
-            setIsGeneratingReport(false);
-        }
-    };
     
     const nowPlayingItem = !isPreviewing && currentQueueIndex >= 0 ? currentItem : null;
     const upNextItem = !isPreviewing && currentQueueIndex >= 0 ? playoutQueue[currentQueueIndex + 1] : null;
@@ -198,37 +128,27 @@ Format your response as a markdown list, with each item starting with a bolded t
     
     const totalContentCount = contentItems.length + audioContentItems.length;
 
-    const getStreamStatusInfo = (status: StreamStatus) => {
-        switch (status) {
-            case 'auto-dj': return { text: 'On Air (Auto DJ)', color: 'bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-300' };
-            case 'live-dj': return { text: 'On Air (Live DJ)', color: 'bg-red-100 dark:bg-red-900 text-red-500 dark:text-red-300' };
-            case 'failover': return { text: 'On Air (Failover)', color: 'bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-300' };
-            default: return { text: 'Offline', color: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300' };
-        }
-    };
-    const streamStatusInfo = getStreamStatusInfo(streamStatus);
-
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
-          title={t('dashboard.stats.streamStatus')} 
-          value={streamStatusInfo.text}
+          title="Station Status" 
+          value={nowPlayingItem ? 'On Air' : 'Offline'}
           icon={<RadioIcon />} 
-          statusColor={streamStatusInfo.color}
+          statusColor={nowPlayingItem ? "bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-300" : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"}
         />
         <StatCard 
-          title={t('dashboard.stats.totalContent')} 
+          title="Total Content" 
           value={totalContentCount.toLocaleString()} 
           icon={<MusicIcon />} 
         />
         <StatCard 
-          title={t('dashboard.stats.playlists')} 
+          title="Playlists" 
           value={isLoadingPlaylists ? '...' : playlists.length.toLocaleString()} 
           icon={<PlaylistIcon />} 
         />
         <StatCard 
-          title={t('dashboard.stats.aiCredits')}
+          title="AI Credits" 
           value={currentUser?.credits.toLocaleString() ?? '0'} 
           icon={<DollarSignIcon />} 
         />
@@ -236,11 +156,11 @@ Format your response as a markdown list, with each item starting with a bolded t
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 space-y-4">
-            <h3 className="text-xl font-semibold text-gray-800 dark:text-white">{t('dashboard.livePlayout.title')}</h3>
+            <h3 className="text-xl font-semibold text-gray-800 dark:text-white">Live Playout Status</h3>
             {nowPlayingItem ? (
                 <>
                     <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{t('dashboard.livePlayout.nowPlaying')}</p>
+                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Now Playing</p>
                          <div className="bg-blue-50 dark:bg-gray-700/50 rounded-lg p-3 flex items-center space-x-4 border-l-4 border-brand-blue">
                             <div className="text-brand-blue">{isPlayableContent(nowPlayingItem) ? <MusicIcon /> : <DocumentTextIcon />}</div>
                             <div className="flex-grow">
@@ -251,7 +171,7 @@ Format your response as a markdown list, with each item starting with a bolded t
                         </div>
                     </div>
                      <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{t('dashboard.livePlayout.upNext')}</p>
+                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Up Next</p>
                          {upNextItem ? (
                             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 flex items-center space-x-4">
                                 <div className="text-gray-500">{isPlayableContent(upNextItem) ? <MusicIcon /> : <DocumentTextIcon />}</div>
@@ -266,39 +186,37 @@ Format your response as a markdown list, with each item starting with a bolded t
                 </>
             ) : (
                 <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
-                    <p className="font-semibold text-gray-700 dark:text-gray-300">{t('dashboard.livePlayout.offline.title')}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('dashboard.livePlayout.offline.subtitle')}</p>
-                     <button onClick={() => setActivePage('schedule')} className="mt-4 px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none flex items-center justify-center space-x-2 mx-auto">
+                    <p className="font-semibold text-gray-700 dark:text-gray-300">Station is Offline</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Go to the Schedule page to start your broadcast.</p>
+                     <button onClick={() => { (document.querySelector('a[data-page="schedule"]') as HTMLElement)?.click(); }} className="mt-4 px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none flex items-center justify-center space-x-2 mx-auto">
                         <ScheduleIcon />
-                        <span>{t('dashboard.livePlayout.offline.button')}</span>
+                        <span>Go to Schedule</span>
                     </button>
                 </div>
             )}
         </div>
-         <div className="md:col-span-1 space-y-6">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-                <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">{t('dashboard.vibe.title')}</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                    {currentUser?.role === 'Admin'
-                        ? t('dashboard.vibe.description_admin')
-                        : t('dashboard.vibe.description_user')
-                    }
-                </p>
-                <select 
-                    value={stationSettings.vibe || 'Default'} 
-                    onChange={handleVibeChange} 
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-100 dark:disabled:bg-gray-700/50 disabled:cursor-not-allowed"
-                    disabled={currentUser?.role !== 'Admin'}
-                >
-                    <option>Default</option>
-                    <option>Upbeat</option>
-                    <option>Chill</option>
-                    <option>Playful</option>
-                    <option>Professional</option>
-                </select>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-                 <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">{t('dashboard.clock.title')}</h3>
+         <div className="md:col-span-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Station Vibe</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                {currentUser?.role === 'Admin'
+                    ? "Set the mood for your AI DJ. This will change the tone of generated announcements in real-time."
+                    : "The current station mood set by an admin. This affects the tone of AI announcements."
+                }
+            </p>
+            <select 
+                value={stationSettings.vibe || 'Default'} 
+                onChange={handleVibeChange} 
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-100 dark:disabled:bg-gray-700/50 disabled:cursor-not-allowed"
+                disabled={currentUser?.role !== 'Admin'}
+            >
+                <option>Default</option>
+                <option>Upbeat</option>
+                <option>Chill</option>
+                <option>Playful</option>
+                <option>Professional</option>
+            </select>
+            <div className="mt-6">
+                 <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Clock</h3>
                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 flex flex-col items-center justify-center">
                     <p className="text-3xl font-bold text-gray-800 dark:text-white">
                         {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -310,60 +228,30 @@ Format your response as a markdown list, with each item starting with a bolded t
             </div>
         </div>
     </div>
-     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-            <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-800 dark:text-white">
-                <LinkIcon />
-                <span className="ml-2">{t('dashboard.listenUrl.title')}</span>
-            </h3>
-            {stationSettings.streamUrl ? (
-                 <div className="flex items-center space-x-2">
-                    <input type="text" readOnly value={stationSettings.streamUrl} className="flex-grow px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-gray-50 dark:bg-gray-700/50 text-sm" />
-                    <button onClick={() => navigator.clipboard.writeText(stationSettings.streamUrl || '')} className="px-4 py-1.5 text-sm bg-gray-200 dark:bg-gray-600 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500">Copy</button>
-                </div>
-            ) : (
-                <p className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.listenUrl.placeholder')}</p>
-            )}
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-            <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-800 dark:text-white">
-                <SparklesIcon className="h-5 w-5 mr-2 text-purple-500" />
-                {t('dashboard.recommendations.title')}
-            </h3>
-            {isLoadingRecs ? (
-                <p className="text-gray-500 dark:text-gray-400">{t('dashboard.recommendations.loading')}</p>
-            ) : recommendations.length > 0 ? (
-                <div className="space-y-3">
-                    {recommendations.map(item => (
-                        <div key={item.id} className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg flex justify-between items-center">
-                            <div>
-                                <p className="font-semibold text-gray-800 dark:text-white">{item.filename}</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">{item.genre}</p>
-                            </div>
-                            <button onClick={() => handleImport(item)} className="px-3 py-1 text-sm bg-brand-blue text-white rounded-md hover:bg-blue-700">{t('dashboard.recommendations.button')}</button>
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <p className="text-gray-500 dark:text-gray-400">{t('dashboard.recommendations.empty')}</p>
-            )}
-        </div>
-    </div>
-     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+
+
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
         <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-800 dark:text-white">
             <SparklesIcon className="h-5 w-5 mr-2 text-purple-500" />
-            Station Health & Opportunity Report
+            AI Recommendations from the Vault
         </h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Let the AI act as your station consultant. It will scan your content library, schedules, and audience engagement to identify problems and suggest opportunities for improvement. The report will be delivered to your Control Room.
-        </p>
-        <button 
-            onClick={handleGenerateReport} 
-            disabled={isGeneratingReport}
-            className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none disabled:bg-purple-400"
-        >
-            {isGeneratingReport ? 'Analyzing...' : `Generate Report (${REPORT_COST} Credits)`}
-        </button>
+        {isLoadingRecs ? (
+            <p className="text-gray-500 dark:text-gray-400">Analyzing your library to find recommendations...</p>
+        ) : recommendations.length > 0 ? (
+            <div className="space-y-3">
+                {recommendations.map(item => (
+                    <div key={item.id} className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg flex justify-between items-center">
+                        <div>
+                            <p className="font-semibold text-gray-800 dark:text-white">{item.filename}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{item.genre}</p>
+                        </div>
+                        <button onClick={() => handleImport(item)} className="px-3 py-1 text-sm bg-brand-blue text-white rounded-md hover:bg-blue-700">Add to Library</button>
+                    </div>
+                ))}
+            </div>
+        ) : (
+            <p className="text-gray-500 dark:text-gray-400">Not enough data to generate recommendations.</p>
+        )}
     </div>
 
     </div>

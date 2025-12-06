@@ -22,8 +22,8 @@ const getApiErrorMessage = (error: any): string => {
 
 /**
  * Wraps the GoogleGenAI generateContent call with a retry mechanism.
- * It specifically handles 429 "RESOURCE_EXHAUSTED" and transient XHR errors by waiting
- * with exponential backoff before retrying.
+ * It specifically handles 429 "RESOURCE_EXHAUSTED" and 500 "Internal Server Error"
+ * errors by waiting with exponential backoff before retrying.
  * @param request The request object for the generateContent call.
  * @returns A Promise that resolves with the GenerateContentResponse.
  * @throws Throws the last error after all retries have been exhausted, or a non-retriable error immediately.
@@ -41,13 +41,9 @@ export async function generateWithRetry(request: GenerateContentRequest): Promis
             lastError = error;
             const errorMessage = getApiErrorMessage(error);
             
-            // Check for retriable error codes or messages
-            const isRetriableError = 
-                errorMessage.includes('429') || 
-                errorMessage.includes('RESOURCE_EXHAUSTED') || 
-                errorMessage.includes('quota') ||
-                errorMessage.includes('Rpc failed due to xhr error');
-
+            // Check for various retriable error conditions
+            const isRateLimitError = error.message.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('quota');
+            const isInternalServerError = error.message.includes('500') || errorMessage.includes('Internal Server Error');
             const isDailyLimitError = errorMessage.includes('per_model_per_day');
 
             // Do not retry for daily limit errors, fail immediately.
@@ -56,9 +52,11 @@ export async function generateWithRetry(request: GenerateContentRequest): Promis
                 throw error;
             }
 
-            if (isRetriableError && i < MAX_RETRIES - 1) {
+            // Retry on rate limit errors OR internal server errors
+            if ((isRateLimitError || isInternalServerError) && i < MAX_RETRIES - 1) {
                 const delay = INITIAL_DELAY_MS * Math.pow(2, i);
-                console.warn(`Retriable error encountered. Retrying in ${delay}ms... (Attempt ${i + 1}/${MAX_RETRIES})`, errorMessage);
+                const reason = isInternalServerError ? "Internal Server Error" : "Rate limit exceeded";
+                console.warn(`${reason}. Retrying in ${delay}ms... (Attempt ${i + 1}/${MAX_RETRIES})`);
                 await new Promise(resolve => setTimeout(resolve, delay));
             } else {
                 // Not a retriable error, or it's the last attempt, so fail
@@ -93,6 +91,8 @@ export const handleAiError = (error: any, addToast: (message: string, type: 'suc
         }
         
         addToast(userMessage, 'error');
+    } else if (errorMessage.includes('500') || errorMessage.includes('Internal Server Error')) {
+        addToast('The AI service encountered a temporary internal error. Please try again in a moment.', 'error');
     } else {
         addToast('An unexpected error occurred with the AI service.', 'error');
     }

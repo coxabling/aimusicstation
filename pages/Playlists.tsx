@@ -129,12 +129,7 @@ const PlaylistDetail: React.FC<{
     );
 };
 
-interface PlaylistsProps {
-    actionTrigger?: string;
-    clearActionTrigger?: () => void;
-}
-
-const Playlists: React.FC<PlaylistsProps> = ({ actionTrigger, clearActionTrigger }) => {
+const Playlists: React.FC = () => {
     const { currentUser, deductCredits } = useAuth();
     const { addToast } = useToast();
     const { contentItems, audioContentItems } = useContent();
@@ -167,13 +162,6 @@ const Playlists: React.FC<PlaylistsProps> = ({ actionTrigger, clearActionTrigger
     useEffect(() => {
         loadPlaylists();
     }, [loadPlaylists]);
-
-    useEffect(() => {
-        if (actionTrigger === 'createPlaylist' && clearActionTrigger) {
-            setIsCreateModalOpen(true);
-            clearActionTrigger();
-        }
-    }, [actionTrigger, clearActionTrigger]);
 
     const handleCreatePlaylist = async () => {
         if (!newPlaylistName.trim() || !currentUser) return;

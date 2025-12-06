@@ -1,9 +1,8 @@
-
-import type { ContentItem, AudioContent, ArticleHistoryItem, SavedSchedule, Playlist, ClonedVoice, User, RssFeedSettings, SocialPost, Submission, Campaign, CreditUsageLog, Clockwheel, Webhook, AIReport } from '../types';
+import type { ContentItem, AudioContent, ArticleHistoryItem, SavedSchedule, Playlist, ClonedVoice, User, RssFeedSettings, SocialPost, Submission, Campaign, CreditUsageLog, Clockwheel, Webhook } from '../types';
 
 const DB_NAME = 'ai-music-station-db';
-// Increment DB version to add new aiReports object store.
-const DB_VERSION = 15; // Increment version for schema change
+// Increment DB version to add new announcementCache object store.
+const DB_VERSION = 14; // Increment version for schema change
 const CONTENT_STORE = 'contentItems';
 const AUDIO_STORE = 'audioContent';
 const HISTORY_STORE = 'articleHistory';
@@ -18,7 +17,7 @@ const CAMPAIGNS_STORE = 'campaigns';
 const CREDIT_LOGS_STORE = 'creditUsageLogs';
 const CLOCKWHEELS_STORE = 'clockwheels';
 const WEBHOOKS_STORE = 'webhooks';
-const AI_REPORTS_STORE = 'aiReports';
+const ANNOUNCEMENT_CACHE_STORE = 'announcementCache';
 
 
 let db: IDBDatabase;
@@ -60,7 +59,10 @@ const dbReady = new Promise<IDBDatabase>((resolve, reject) => {
         createStoreWithIndex(CREDIT_LOGS_STORE);
         createStoreWithIndex(CLOCKWHEELS_STORE);
         createStoreWithIndex(WEBHOOKS_STORE);
-        createStoreWithIndex(AI_REPORTS_STORE);
+        
+        if (!storeNames.contains(ANNOUNCEMENT_CACHE_STORE)) {
+            tempDb.createObjectStore(ANNOUNCEMENT_CACHE_STORE, { keyPath: 'contentId' });
+        }
 
         if (!storeNames.contains(USERS_STORE)) {
             const userStore = tempDb.createObjectStore(USERS_STORE, { keyPath: 'id' });
@@ -97,16 +99,16 @@ export const seedInitialData = async () => {
         const isoRenewalDate = renewalDate.toISOString();
         
         await Promise.all([
-            promisifyRequest(userStore.put({ id: 'admin@test.com', email: 'admin@test.com', username: 'admin', role: 'Admin', tenantId: defaultTenantId, avatar: null, credits: 50000, subscriptionPlan: 'Pro Broadcaster', renewalDate: isoRenewalDate, status: 'active' })),
-            promisifyRequest(userStore.put({ id: 'user@test.com', email: 'user@test.com', username: 'user', role: 'User', tenantId: defaultTenantId, avatar: null, credits: 5000, subscriptionPlan: 'Hobby', renewalDate: isoRenewalDate, status: 'active' })),
+            promisifyRequest(userStore.put({ id: 'admin@test.com', email: 'admin@test.com', username: 'admin', role: 'Admin', tenantId: defaultTenantId, avatar: null, credits: 50000, subscriptionPlan: 'Pro Broadcaster', renewalDate: isoRenewalDate })),
+            promisifyRequest(userStore.put({ id: 'user@test.com', email: 'user@test.com', username: 'user', role: 'User', tenantId: defaultTenantId, avatar: null, credits: 5000, subscriptionPlan: 'Hobby', renewalDate: isoRenewalDate })),
             promisifyRequest(submissionStore.put({ id: 'sub1', tenantId: defaultTenantId, type: 'Shoutout', from: 'Sarah', location: 'London', message: 'Big shoutout to the whole team working late tonight! Keep the tunes coming!', status: 'pending', createdAt: new Date().toISOString() })),
             promisifyRequest(submissionStore.put({ id: 'sub2', tenantId: defaultTenantId, type: 'Song Request', from: 'Mark', message: 'Cybernetic Dreams', status: 'pending', createdAt: new Date(Date.now() - 3600000).toISOString() })),
             promisifyRequest(submissionStore.put({ id: 'sub3', tenantId: defaultTenantId, type: 'Song Request', from: 'Jen', message: 'Ocean Drive by Miami Nights', status: 'approved', createdAt: new Date(Date.now() - 7200000).toISOString() })),
             promisifyRequest(submissionStore.put({ id: 'sub4', tenantId: defaultTenantId, type: 'Shoutout', from: 'Anonymous', message: 'This station is the best!', status: 'rejected', createdAt: new Date(Date.now() - 10800000).toISOString() })),
             
             // Seed Ads
-            promisifyRequest(contentStore.put({ id: 'ad-seed-1', tenantId: defaultTenantId, type: 'Ad', title: 'TechCorp Ad Spot', duration: '0:30', date: new Date().toISOString(), url: 'https://www.zapsplat.com/wp-content/uploads/2015/06/corporate-business-5.mp3' })),
-            promisifyRequest(contentStore.put({ id: 'ad-seed-2', tenantId: defaultTenantId, type: 'Ad', title: 'Coffee House Promo', duration: '0:15', date: new Date().toISOString(), url: 'https://www.zapsplat.com/wp-content/uploads/2015/06/jazz-cafe-1.mp3' })),
+            promisifyRequest(contentStore.put({ id: 'ad-seed-1', tenantId: defaultTenantId, type: 'Ad', title: 'TechCorp Ad Spot', duration: '0:30', date: new Date().toISOString(), url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_2e132219f7.mp3' })),
+            promisifyRequest(contentStore.put({ id: 'ad-seed-2', tenantId: defaultTenantId, type: 'Ad', title: 'Coffee House Promo', duration: '0:15', date: new Date().toISOString(), url: 'https://cdn.pixabay.com/audio/2023/09/25/audio_5572b8347c.mp3' })),
 
             // Seed Campaigns
             promisifyRequest(campaignStore.put({ id: 'camp-1', tenantId: defaultTenantId, name: 'Summer Sale 2024', sponsor: 'TechCorp', startDate: new Date('2024-07-01').toISOString(), endDate: new Date('2024-08-31').toISOString(), status: 'active', impressionGoal: 1000, impressions: 125, creativeIds: ['ad-seed-1'] })),
@@ -115,6 +117,37 @@ export const seedInitialData = async () => {
         ]);
         console.log("Seeding complete.");
     }
+};
+
+// --- Users ---
+export const getAllUsers = async (): Promise<User[]> => {
+    const db = await dbReady;
+    const tx = db.transaction(USERS_STORE, 'readonly');
+    return promisifyRequest(tx.objectStore(USERS_STORE).getAll());
+};
+
+export const getUsersByTenant = async (tenantId: string): Promise<User[]> => {
+    const db = await dbReady;
+    const tx = db.transaction(USERS_STORE, 'readonly');
+    const store = tx.objectStore(USERS_STORE);
+    const index = store.index('tenantId');
+    return promisifyRequest(index.getAll(tenantId));
+};
+
+export const getUser = async (id: string): Promise<User | undefined> => {
+    const db = await dbReady;
+    const tx = db.transaction(USERS_STORE, 'readonly');
+    return promisifyRequest(tx.objectStore(USERS_STORE).get(id));
+};
+
+export const saveUser = async (user: User): Promise<void> => {
+    const db = await dbReady;
+    const tx = db.transaction(USERS_STORE, 'readwrite');
+    await promisifyRequest(tx.objectStore(USERS_STORE).put(user));
+};
+
+export const deleteUser = (id: string, tenantId: string): Promise<void> => {
+    return deleteItems(USERS_STORE, [id], tenantId);
 };
 
 // --- Generic Tenant-Scoped Functions ---
@@ -213,27 +246,6 @@ const removeTracksFromAllPlaylists = async (trackIdsToRemove: string[], tenantId
     });
 };
 
-// --- Users ---
-export const getAllUsers = async (): Promise<User[]> => {
-    const db = await dbReady;
-    const tx = db.transaction(USERS_STORE, 'readonly');
-    const store = tx.objectStore(USERS_STORE);
-    return promisifyRequest(store.getAll());
-};
-export const getUsersByTenant = (tenantId: string): Promise<User[]> => getAllByTenant(USERS_STORE, tenantId);
-export const getUser = (id: string): Promise<User | undefined> => {
-    return new Promise(async (resolve, reject) => {
-        const db = await dbReady;
-        const tx = db.transaction(USERS_STORE, 'readonly');
-        const store = tx.objectStore(USERS_STORE);
-        const request = store.get(id);
-        request.onsuccess = () => resolve(request.result as User);
-        request.onerror = () => reject(request.error);
-    });
-};
-export const saveUser = (user: User): Promise<void> => saveItem(USERS_STORE, user);
-export const deleteUser = (id: string, tenantId: string): Promise<void> => deleteItems(USERS_STORE, [id], tenantId);
-
 
 // --- Content Items ---
 export const getAllContentItems = (tenantId: string): Promise<ContentItem[]> => getAllByTenant(CONTENT_STORE, tenantId);
@@ -276,6 +288,24 @@ export const deleteAudioContent = async (ids: string[], tenantId: string): Promi
     await removeTracksFromAllPlaylists(ids, tenantId);
     await deleteItems(AUDIO_STORE, ids, tenantId);
 };
+
+// --- Announcement Cache ---
+export interface CachedAnnouncement {
+  contentId: string;
+  audioBlob: Blob;
+}
+export const saveCachedAnnouncement = (item: CachedAnnouncement): Promise<void> => saveItem(ANNOUNCEMENT_CACHE_STORE, item);
+export const getCachedAnnouncement = (contentId: string): Promise<CachedAnnouncement | undefined> => {
+    return new Promise(async (resolve, reject) => {
+        const db = await dbReady;
+        const tx = db.transaction(ANNOUNCEMENT_CACHE_STORE, 'readonly');
+        const store = tx.objectStore(ANNOUNCEMENT_CACHE_STORE);
+        const request = store.get(contentId);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+};
+
 
 // --- Article History ---
 export const getAllGeneratedArticles = (tenantId: string): Promise<ArticleHistoryItem[]> => getAllByTenant(HISTORY_STORE, tenantId);
@@ -332,12 +362,6 @@ export const deleteClockwheel = (id: string, tenantId: string): Promise<void> =>
 export const getAllWebhooks = (tenantId: string): Promise<Webhook[]> => getAllByTenant(WEBHOOKS_STORE, tenantId);
 export const saveWebhook = (item: Webhook): Promise<void> => saveItem(WEBHOOKS_STORE, item);
 export const deleteWebhook = (id: string, tenantId: string): Promise<void> => deleteItems(WEBHOOKS_STORE, [id], tenantId);
-
-// --- AI Reports ---
-export const getAllAIReports = (tenantId: string): Promise<AIReport[]> => getAllByTenant(AI_REPORTS_STORE, tenantId);
-export const saveAIReport = (report: AIReport): Promise<void> => saveItem(AI_REPORTS_STORE, report);
-export const deleteAIReport = (id: string, tenantId: string): Promise<void> => deleteItems(AI_REPORTS_STORE, [id], tenantId);
-
 
 // --- RSS Feed Settings ---
 export const getAllRssFeedSettings = (tenantId: string): Promise<RssFeedSettings[]> => getAllByTenant(RSS_FEEDS_STORE, tenantId);

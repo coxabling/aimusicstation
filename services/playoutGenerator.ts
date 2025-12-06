@@ -1,4 +1,6 @@
-import type { ContentItem, Campaign, Clockwheel, ClockwheelBlock, Station, ClockwheelBlockType, MusicContent } from '../types';
+
+// FIX: Import ClockwheelBlockType to resolve type errors.
+import type { ContentItem, Campaign, Clockwheel, ClockwheelBlock, Station, ClockwheelBlockType } from '../types';
 import { isPlayableContent } from '../types';
 import { generateWithRetry } from './ai';
 
@@ -20,10 +22,36 @@ const mapBlockToContentType = (block: ClockwheelBlockType): ContentItem['type'][
         case 'Article': case 'News': case 'Weather': return ['Article', 'RSS Feed'];
         case 'Ad': return ['Ad'];
         case 'Jingle': case 'StationID': case 'Promo': return ['Custom Audio'];
-        case 'Relay Stream': return ['Relay Stream'];
         default: return [];
     }
 }
+
+/**
+ * Applies the "1 in 10" announcer logic to a music track.
+ * If a track already has an announcer, it resets the counter.
+ * Otherwise, it increments the counter and adds an announcer if the threshold is met.
+ * @param item The ContentItem to process.
+ * @param musicSinceLastAnnouncer The current count of music tracks without an announcer.
+ * @returns An object containing the potentially modified item and the new counter value.
+ */
+const applyAnnouncerLogic = (item: ContentItem, musicSinceLastAnnouncer: number): { itemWithAnnouncer: ContentItem, newCounter: number } => {
+    let itemWithAnnouncer = { ...item };
+    let newCounter = musicSinceLastAnnouncer;
+
+    if (itemWithAnnouncer.type === 'Music') {
+        if (itemWithAnnouncer.useAiAnnouncer) {
+            newCounter = 0; // Reset counter if an announcer is already manually set
+        } else {
+            newCounter++;
+            if (newCounter >= 10) {
+                itemWithAnnouncer.useAiAnnouncer = true;
+                newCounter = 0; // Add announcer and reset counter
+            }
+        }
+    }
+    return { itemWithAnnouncer, newCounter };
+};
+
 
 export const generateSchedule = (
     content: ContentItem[],
@@ -47,6 +75,7 @@ export const generateSchedule = (
     let sequenceIndex = 0;
     let attempts = 0;
     const maxAttempts = scheduleLength * 5;
+    let musicSinceLastAnnouncer = 0;
 
     while (schedule.length < scheduleLength && attempts < maxAttempts) {
         if (formatSequence.length === 0) break;
@@ -57,7 +86,7 @@ export const generateSchedule = (
             
             const shuffledPool = [...pool].sort(() => 0.5 - Math.random());
             for (const item of shuffledPool) {
-                const isAudio = ['Music', 'Ad', 'Custom Audio', 'Relay Stream'].includes(item.type);
+                const isAudio = ['Music', 'Ad', 'Custom Audio'].includes(item.type);
                 if ((isAudio && isPlayableContent(item)) || !isAudio) {
                     if (schedule.length > 0 && item.id === schedule[schedule.length - 1].originalId && pool.length > 1) {
                         continue;
@@ -91,8 +120,11 @@ export const generateSchedule = (
         }
         
         if (foundItem) {
+            const { itemWithAnnouncer, newCounter } = applyAnnouncerLogic(foundItem, musicSinceLastAnnouncer);
+            musicSinceLastAnnouncer = newCounter;
+            
             schedule.push({ 
-                ...foundItem, 
+                ...itemWithAnnouncer, 
                 id: `${foundItem.id}-${Date.now()}-${schedule.length}`,
                 originalId: foundItem.id,
             });
@@ -126,6 +158,7 @@ export const generateScheduleFromClockwheel = async (
     });
 
     const activeCreativeIds = new Set(activeCampaigns.flatMap(c => c.creativeIds));
+    let musicSinceLastAnnouncer = 0;
 
     const findRandomItem = (type: ClockwheelBlockType, rule: string): ContentItem | null => {
         let pool: ContentItem[] = [];
@@ -134,35 +167,10 @@ export const generateScheduleFromClockwheel = async (
                 pool = availableContentByType['Music'] || [];
                 if (rule.toLowerCase() !== 'any' && rule.trim() !== '') {
                     const rules = rule.toLowerCase().split(',').map(r => r.trim());
-                    const tagRules = rules.filter(r => !r.match(/[<>=]/));
-                    const numericRules = rules.filter(r => r.match(/[<>=]/)).map(r => {
-                        const match = r.match(/(\w+)\s*([<>=]+)\s*(\d+(\.\d+)?)/);
-                        if (match) return { key: match[1] as keyof MusicContent, op: match[2], val: Number(match[3]) };
-                        return null;
-                    }).filter((r): r is NonNullable<typeof r> => !!r);
-
                     pool = pool.filter(item => {
-                        const musicItem = item as MusicContent;
-                        
-                        const tagsMatch = tagRules.length === 0 || tagRules.every(r => {
-                            const itemTags = [musicItem.genre, ...(musicItem.moodTags || [])].filter(Boolean).join(' ').toLowerCase();
-                            return itemTags.includes(r);
-                        });
-                        if (!tagsMatch) return false;
-
-                        const numericMatch = numericRules.every(rule => {
-                            const itemVal = musicItem[rule.key];
-                            if (itemVal === undefined || typeof itemVal !== 'number') return false;
-                            switch (rule.op) {
-                                case '>': return itemVal > rule.val;
-                                case '<': return itemVal < rule.val;
-                                case '>=': return itemVal >= rule.val;
-                                case '<=': return itemVal <= rule.val;
-                                case '=': return itemVal == rule.val;
-                                default: return false;
-                            }
-                        });
-                        return numericMatch;
+                        const musicItem = item as any;
+                        const itemTags = [musicItem.genre, musicItem.mood, musicItem.notes].filter(Boolean).join(' ').toLowerCase();
+                        return rules.some(r => itemTags.includes(r));
                     });
                 }
                 break;
@@ -178,16 +186,13 @@ export const generateScheduleFromClockwheel = async (
                 pool = [...(availableContentByType['Article'] || []), ...(availableContentByType['RSS Feed'] || [])];
                 // You could filter by title containing "News" or "Weather"
                 break;
-            case 'Relay Stream':
-                pool = availableContentByType['Relay Stream'] || [];
-                break;
         }
 
         if (pool.length === 0) return null;
 
         const shuffledPool = [...pool].sort(() => 0.5 - Math.random());
         for (const item of shuffledPool) {
-            const isAudio = ['Music', 'Ad', 'Custom Audio', 'Relay Stream'].includes(item.type);
+            const isAudio = ['Music', 'Ad', 'Custom Audio'].includes(item.type);
             if ((isAudio && isPlayableContent(item)) || !isAudio) {
                 if (schedule.length > 0 && item.originalId === schedule[schedule.length - 1].originalId && pool.length > 1) {
                     continue;
@@ -211,7 +216,7 @@ export const generateScheduleFromClockwheel = async (
                         artist: (c as any).artist || '',
                         duration: parseDurationToSeconds(c.duration), 
                         genre: (c as any).genre || '',
-                        mood: (c as any).moodTags?.join(', ') || ''
+                        mood: (c as any).mood || ''
                     }));
                     
                     const prompt = `You are a professional radio program director. Create a playlist for a ${durationMinutes}-minute radio block with the theme "${theme}".
@@ -226,8 +231,11 @@ Return ONLY a JSON array of the content IDs in the correct play order. Do not in
                     if (Array.isArray(ids)) {
                         const themedItems = ids.map(id => allContent.find(c => c.id === id)).filter((item): item is ContentItem => !!item);
                         for (const item of themedItems) {
+                             const { itemWithAnnouncer, newCounter } = applyAnnouncerLogic(item, musicSinceLastAnnouncer);
+                            musicSinceLastAnnouncer = newCounter;
+                            
                              schedule.push({ 
-                                ...item, 
+                                ...itemWithAnnouncer, 
                                 id: `${item.id}-themed-${Date.now()}-${schedule.length}`,
                                 originalId: item.id,
                             });
@@ -238,8 +246,11 @@ Return ONLY a JSON array of the content IDs in the correct play order. Do not in
                     // Fallback on error: add one music track
                     const fallbackItem = findRandomItem('Music', 'Any');
                     if (fallbackItem) {
+                        const { itemWithAnnouncer, newCounter } = applyAnnouncerLogic(fallbackItem, musicSinceLastAnnouncer);
+                        musicSinceLastAnnouncer = newCounter;
+                        
                          schedule.push({ 
-                            ...fallbackItem, 
+                            ...itemWithAnnouncer, 
                             id: `${fallbackItem.id}-cw-fallback-${Date.now()}-${schedule.length}`,
                             originalId: fallbackItem.id,
                         });
@@ -260,8 +271,11 @@ Return ONLY a JSON array of the content IDs in the correct play order. Do not in
                             campaignId = campaign?.id;
                         }
 
+                        const { itemWithAnnouncer, newCounter } = applyAnnouncerLogic(foundItem, musicSinceLastAnnouncer);
+                        musicSinceLastAnnouncer = newCounter;
+
                         schedule.push({ 
-                            ...foundItem, 
+                            ...itemWithAnnouncer, 
                             id: `${foundItem.id}-cw-${Date.now()}-${schedule.length}`,
                             originalId: foundItem.id,
                             campaignId: campaignId,

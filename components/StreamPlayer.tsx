@@ -1,5 +1,4 @@
 
-
 import React, { useMemo } from 'react';
 import {
     PlayIcon, PauseIcon, VolumeUpIcon, VolumeOffIcon, MusicIcon, ArrowLeftIcon,
@@ -27,7 +26,6 @@ const getArtistOrSource = (item: ContentItem) => {
     switch (item.type) {
         case 'Music': case 'Custom Audio': return item.artist;
         case 'RSS Feed': return item.source;
-        case 'Relay Stream': return 'External Stream';
         default: return item.type;
     }
 };
@@ -77,9 +75,10 @@ const StreamPlayer: React.FC<PlayerProps> = ({ isVisible, isExpanded, setIsExpan
         if (stationLogo) {
             return <img src={stationLogo} alt="Station Logo" className="w-full h-full object-cover" />;
         }
+        if (currentItem && isPlayableContent(currentItem)) {
+            return <MusicIcon />;
+        }
         if (currentItem) {
-            if (currentItem.type === 'Relay Stream') return <RadioIcon />;
-            if (isPlayableContent(currentItem)) return <MusicIcon />;
             return <DocumentTextIcon />;
         }
         return <RadioIcon />;

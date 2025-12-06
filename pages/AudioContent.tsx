@@ -1,9 +1,6 @@
-
-
 import React, { useState, ChangeEvent, useEffect, useCallback, useRef, useMemo } from 'react';
-import { GoogleGenAI, Type } from '@google/genai';
-import { MusicIcon, PencilIcon, TrashIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, ExclamationCircleIcon, QueueAddIcon } from '../components/icons';
-import type { AudioContent as AudioContentType, Playlist, ContentItem, MusicContent, AdContent, CustomAudioContent, ClonedVoice, User } from '../types';
+import { MusicIcon, PencilIcon, TrashIcon, PlaylistAddIcon, PlayCircleIcon, PauseCircleIcon, DownloadIcon, ArrowUpIcon, ArrowDownIcon, SortIcon, ExclamationCircleIcon } from '../components/icons';
+import type { AudioContent as AudioContentType, Playlist, ContentItem, MusicContent, AdContent, CustomAudioContent, ClonedVoice } from '../types';
 import Modal from '../components/Modal';
 import InputField from '../components/InputField';
 import ToggleSwitch from '../components/ToggleSwitch';
@@ -13,25 +10,8 @@ import * as db from '../services/db';
 import { useToast } from '../contexts/ToastContext';
 import { useContent } from '../contexts/ContentContext';
 import { useAuth } from '../contexts/AuthContext';
-import { generateWithRetry, handleAiError } from '../services/ai';
 
 // --- HELPERS ---
-
-const analysisSchema = {
-    type: Type.OBJECT,
-    properties: {
-        bpm: { type: Type.NUMBER, description: "Beats per minute of the track." },
-        key: { type: Type.STRING, description: "Musical key, e.g., 'C minor'." },
-        energy: { type: Type.INTEGER, description: "Energy level from 1 to 10." },
-        moodTags: { 
-            type: Type.ARRAY, 
-            description: "An array of 3-5 descriptive mood tags.",
-            items: { type: Type.STRING }
-        }
-    },
-    required: ["bpm", "key", "energy", "moodTags"]
-};
-
 
 const Checkmark: React.FC<{ checked: boolean }> = ({ checked }) => (
     <span className={checked ? 'text-green-500' : 'text-gray-400'}>{checked ? <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>}</span>
@@ -52,56 +32,18 @@ const getAudioDuration = (file: File): Promise<string> => {
             const minutes = Math.floor(duration / 60);
             const seconds = duration % 60;
             resolve(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+            URL.revokeObjectURL(audio.src);
         };
-        audio.onerror = () => { resolve('0:00'); };
+        audio.onerror = () => { resolve('0:00'); URL.revokeObjectURL(audio.src); };
     });
 };
 
-const mapAudioToContentItem = (audio: AudioContentType, currentUser: User): ContentItem | null => {
-    if (audio.type === 'Music') {
-        return {
-            id: audio.id,
-            tenantId: currentUser.tenantId,
-            title: audio.filename,
-            type: 'Music',
-            artist: audio.artist || 'Unknown',
-            duration: audio.duration,
-            date: audio.dateTime,
-            url: audio.url,
-            file: audio.file,
-            genre: audio.genre,
-            useAiAnnouncer: audio.announceTrack,
-            announcerVoice: audio.announcementVoice,
-            announcementWithBackgroundMusic: audio.announcementWithBackgroundMusic,
-            bpm: audio.bpm,
-            key: audio.key,
-            energy: audio.energy,
-            moodTags: audio.moodTags,
-        };
-    }
-    if (audio.type === 'Jingle' || audio.type === 'Ad') {
-        return {
-            id: audio.id,
-            tenantId: currentUser.tenantId,
-            title: audio.filename,
-            type: audio.type === 'Jingle' ? 'Custom Audio' : 'Ad',
-            artist: audio.artist || (audio.type === 'Jingle' ? 'Station Audio' : 'Advertisement'),
-            duration: audio.duration,
-            date: audio.dateTime,
-            url: audio.url,
-            file: audio.file,
-        };
-    }
-    return null;
-}
-
 // --- SINGLE & BULK UPLOAD FORMS ---
 
-const AudioContentForm: React.FC<{ item: Partial<AudioContentType>; onSave: (item: Partial<AudioContentType>, file?: File) => void; onCancel: () => void; clonedVoices: ClonedVoice[]; runMusicAnalysis: (file: File) => Promise<Partial<AudioContentType>>; }> = ({ item, onSave, onCancel, clonedVoices, runMusicAnalysis }) => {
+const AudioContentForm: React.FC<{ item: Partial<AudioContentType>; onSave: (item: Partial<AudioContentType>, file?: File) => void; onCancel: () => void; clonedVoices: ClonedVoice[]; }> = ({ item, onSave, onCancel, clonedVoices }) => {
     const [currentItem, setCurrentItem] = useState<Partial<AudioContentType>>(item.id ? item : { type: 'Music', announceTrack: false, announcementWithBackgroundMusic: false, published: true, ...item });
     const [file, setFile] = useState<File | null>(null);
     const [isUploading, setIsUploading] = useState(false);
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setCurrentItem(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -115,31 +57,24 @@ const AudioContentForm: React.FC<{ item: Partial<AudioContentType>; onSave: (ite
         }
     };
     
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        
-        const isNewMusicUpload = !currentItem.id && file && currentItem.type === 'Music';
-
-        if (isUploading || isAnalyzing) return;
-
-        if (isNewMusicUpload) {
-            // Run analysis first for new music
-            setIsAnalyzing(true);
-            try {
-                const analysisData = await runMusicAnalysis(file);
-                // Now proceed to upload/save with analysis data
-                simulateUploadAndSave({ ...currentItem, ...analysisData }, file);
-            } catch (error) {
-                // If analysis fails, save without the data
-                simulateUploadAndSave(currentItem, file);
-            } finally {
-                setIsAnalyzing(false);
-            }
-        } else if (file) {
-            // For other types or edits with a file, just simulate upload
-            simulateUploadAndSave(currentItem, file);
-        } else {
-            // For edits without a new file
+        if (file && !isUploading) {
+            setIsUploading(true);
+            setUploadProgress(0);
+            const interval = setInterval(() => {
+                setUploadProgress(prev => {
+                    const newProgress = prev + Math.floor(Math.random() * 15) + 5;
+                    if (newProgress >= 100) {
+                        clearInterval(interval);
+                        setUploadProgress(100);
+                        setTimeout(() => onSave(currentItem, file), 500);
+                        return 100;
+                    }
+                    return newProgress;
+                });
+            }, 250);
+        } else if (!isUploading) {
             if (!currentItem.id && !file) {
                 alert("Please select a file to upload.");
                 return;
@@ -148,30 +83,6 @@ const AudioContentForm: React.FC<{ item: Partial<AudioContentType>; onSave: (ite
         }
     };
     
-    const simulateUploadAndSave = (itemToSave: Partial<AudioContentType>, fileToSave?: File) => {
-        if (!fileToSave) {
-            onSave(itemToSave);
-            return;
-        }
-        setIsUploading(true);
-        setUploadProgress(0);
-        const interval = setInterval(() => {
-            setUploadProgress(prev => {
-                const newProgress = prev + Math.floor(Math.random() * 15) + 5;
-                if (newProgress >= 100) {
-                    clearInterval(interval);
-                    setUploadProgress(100);
-                    setTimeout(() => onSave(itemToSave, fileToSave), 500);
-                    return 100;
-                }
-                return newProgress;
-            });
-        }, 250);
-    };
-
-    const isProcessing = isUploading || isAnalyzing;
-    const buttonText = isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : isAnalyzing ? 'Analyzing...' : 'Save Audio';
-
     return (
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -180,9 +91,9 @@ const AudioContentForm: React.FC<{ item: Partial<AudioContentType>; onSave: (ite
             <div className="space-y-1 text-center">
                 <MusicIcon />
                 <div className="flex text-sm text-gray-600 dark:text-gray-400">
-                    <label htmlFor="file-upload" className={`relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-brand-blue hover:text-blue-700 focus-within:outline-none ${isProcessing ? 'cursor-not-allowed text-gray-400' : ''}`}>
+                    <label htmlFor="file-upload" className={`relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-brand-blue hover:text-blue-700 focus-within:outline-none ${isUploading ? 'cursor-not-allowed text-gray-400' : ''}`}>
                         <span>{currentItem.id ? 'Upload new file' : 'Upload a file'}</span>
-                        <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="audio/*" disabled={isProcessing} />
+                        <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="audio/*" disabled={isUploading} />
                     </label>
                 </div>
                 {file ? <p className="text-xs text-green-500">{file.name}</p> : <p className="text-xs text-gray-500 dark:text-gray-400">{currentItem.filename || 'MP3, WAV, etc.'}</p>}
@@ -194,29 +105,15 @@ const AudioContentForm: React.FC<{ item: Partial<AudioContentType>; onSave: (ite
                  <ProgressBar progress={uploadProgress} />
             </div>
           )}
-          {isAnalyzing && <p className="text-sm text-center text-purple-600 dark:text-purple-400 font-semibold">Running AI Music Analysis...</p>}
         </div>
         <div>
           <label htmlFor="type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content Type</label>
-          <select id="type" name="type" value={currentItem.type || 'Music'} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-200 dark:disabled:bg-gray-600" disabled={isProcessing}>
+          <select id="type" name="type" value={currentItem.type || 'Music'} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-200 dark:disabled:bg-gray-600" disabled={isUploading}>
               <option>Music</option><option>Jingle</option><option>Ad</option>
           </select>
         </div>
-        <InputField label="Artist" name="artist" value={currentItem.artist || ''} onChange={handleChange} placeholder="e.g., Synthwave Rider" disabled={isProcessing}/>
-        <InputField label="Genre" name="genre" value={currentItem.genre || ''} onChange={handleChange} placeholder="e.g., Synthwave" disabled={isProcessing}/>
-        
-        {currentItem.type === 'Music' && (currentItem.bpm || currentItem.key) && (
-            <div className="p-4 border dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-900/50">
-                <h4 className="text-sm font-semibold text-gray-800 dark:text-white mb-2">AI Analysis</h4>
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div><span className="font-medium text-gray-500">BPM:</span> {currentItem.bpm || 'N/A'}</div>
-                    <div><span className="font-medium text-gray-500">Key:</span> {currentItem.key || 'N/A'}</div>
-                    <div><span className="font-medium text-gray-500">Energy:</span> {currentItem.energy ? `${currentItem.energy}/10` : 'N/A'}</div>
-                    <div className="col-span-3"><span className="font-medium text-gray-500">Moods:</span> {(currentItem.moodTags || []).join(', ') || 'N/A'}</div>
-                </div>
-            </div>
-        )}
-
+        <InputField label="Artist" name="artist" value={currentItem.artist || ''} onChange={handleChange} placeholder="e.g., Synthwave Rider" disabled={isUploading}/>
+        <InputField label="Genre" name="genre" value={currentItem.genre || ''} onChange={handleChange} placeholder="e.g., Synthwave" disabled={isUploading}/>
         <div>
             <label htmlFor="announcementVoice" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Announcer Voice</label>
             <select 
@@ -225,7 +122,7 @@ const AudioContentForm: React.FC<{ item: Partial<AudioContentType>; onSave: (ite
                 value={currentItem.announcementVoice || 'AI-Ayo (African Male)'}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue bg-white dark:bg-gray-700 disabled:bg-gray-200 dark:disabled:bg-gray-600"
-                disabled={isProcessing || currentItem.type !== 'Music'}
+                disabled={isUploading || currentItem.type !== 'Music'}
             >
                 <optgroup label="Standard Voices">
                     <option>AI-David</option>
@@ -243,22 +140,22 @@ const AudioContentForm: React.FC<{ item: Partial<AudioContentType>; onSave: (ite
             </select>
         </div>
         <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <ToggleSwitch label="Announce This Track" enabled={!!currentItem.announceTrack} onChange={(val) => handleToggle('announceTrack', val)} disabled={isProcessing || currentItem.type !== 'Music'} />
+          <ToggleSwitch label="Announce This Track" enabled={!!currentItem.announceTrack} onChange={(val) => handleToggle('announceTrack', val)} disabled={isUploading || currentItem.type !== 'Music'} />
           {currentItem.announceTrack && currentItem.type === 'Music' && (
               <div className="pl-4 border-l-2 border-gray-200 dark:border-gray-600">
                   <ToggleSwitch 
                       label="Add background music to announcement" 
                       enabled={!!currentItem.announcementWithBackgroundMusic} 
                       onChange={(val) => handleToggle('announcementWithBackgroundMusic', val)} 
-                      disabled={isProcessing} 
+                      disabled={isUploading} 
                   />
               </div>
           )}
-          <ToggleSwitch label="Published" enabled={!!currentItem.published} onChange={(val) => handleToggle('published', val)} disabled={isProcessing} />
+          <ToggleSwitch label="Published" enabled={!!currentItem.published} onChange={(val) => handleToggle('published', val)} disabled={isUploading} />
         </div>
         <div className="flex justify-end pt-4 space-x-2">
-            <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed" disabled={isProcessing}>Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400 dark:disabled:bg-blue-800 disabled:cursor-not-allowed" disabled={isProcessing}>{buttonText}</button>
+            <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200 font-semibold rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed" disabled={isUploading}>Cancel</button>
+            <button type="submit" className="px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none disabled:bg-blue-400 dark:disabled:bg-blue-800 disabled:cursor-not-allowed" disabled={isUploading}>{isUploading ? `Uploading... ${Math.round(uploadProgress)}%` : 'Save Audio'}</button>
         </div>
       </form>
     );
@@ -267,16 +164,14 @@ const AudioContentForm: React.FC<{ item: Partial<AudioContentType>; onSave: (ite
 interface BulkAudioItem extends Partial<Omit<AudioContentType, 'id' | 'dateTime'>> {
     file: File;
     progress: number;
-    status: 'pending' | 'uploading' | 'analyzing' | 'done' | 'error';
-    errorMessage?: string;
+    status: 'pending' | 'uploading' | 'done';
 }
 
 const BulkUploadForm: React.FC<{
     files: File[];
     onSave: (items: Partial<Omit<AudioContentType, 'id' | 'dateTime'>>[], files: File[]) => void;
     onCancel: () => void;
-    runMusicAnalysis: (file: File) => Promise<Partial<AudioContentType>>;
-}> = ({ files, onSave, onCancel, runMusicAnalysis }) => {
+}> = ({ files, onSave, onCancel }) => {
     const [bulkItems, setBulkItems] = useState<BulkAudioItem[]>([]);
     const [isImporting, setIsImporting] = useState(false);
     const { addToast } = useToast();
@@ -309,57 +204,33 @@ const BulkUploadForm: React.FC<{
         );
     };
 
-    const handleImport = async () => {
+    const handleImport = () => {
         setIsImporting(true);
-        addToast(`Starting import for ${bulkItems.length} files...`, 'info');
-
-        const itemsToSave: Partial<Omit<AudioContentType, 'id' | 'dateTime'>>[] = [];
-        const filesToSave: File[] = [];
-
-        for (let i = 0; i < bulkItems.length; i++) {
-            const item = bulkItems[i];
-            
-            // 1. Simulate Upload
-            setBulkItems(prev => prev.map((bi, idx) => idx === i ? { ...bi, status: 'uploading', progress: 50 } : bi));
-            await new Promise(res => setTimeout(res, 100)); // short delay
-            setBulkItems(prev => prev.map((bi, idx) => idx === i ? { ...bi, progress: 100 } : bi));
-
-            // 2. Run Analysis
-            let analysisData: Partial<AudioContentType> = {};
-            if (item.type === 'Music') {
-                setBulkItems(prev => prev.map((bi, idx) => idx === i ? { ...bi, status: 'analyzing' } : bi));
-                try {
-                    analysisData = await runMusicAnalysis(item.file);
-                } catch (e) {
-                    console.error(`Analysis failed for ${item.file.name}`, e);
-                    setBulkItems(prev => prev.map((bi, idx) => idx === i ? { ...bi, status: 'error', errorMessage: 'AI Analysis Failed' } : bi));
-                    continue; // Skip to next file on analysis error
+        const itemsToSave = bulkItems.map(item => {
+            const { file, progress, status, ...rest } = item;
+            return rest;
+        });
+        const filesToSave = bulkItems.map(item => item.file);
+        
+        const interval = setInterval(() => {
+            let allDone = true;
+            setBulkItems(currentItems => currentItems.map((item) => {
+                if (item.status === 'done') return item;
+                allDone = false;
+                const newProgress = item.progress + Math.random() * 20 + 5;
+                if (newProgress >= 100) {
+                    return { ...item, progress: 100, status: 'done' };
                 }
+                return { ...item, progress: newProgress, status: 'uploading' };
+            }));
+            if (allDone) {
+                clearInterval(interval);
+                 setTimeout(() => {
+                    onSave(itemsToSave, filesToSave);
+                    addToast(`${itemsToSave.length} items imported successfully!`, 'success');
+                 }, 500);
             }
-            
-            // 3. Prepare for save
-            const { file, progress, status, errorMessage, ...rest } = item;
-            itemsToSave.push({ ...rest, ...analysisData });
-            filesToSave.push(file);
-            setBulkItems(prev => prev.map((bi, idx) => idx === i ? { ...bi, status: 'done' } : bi));
-        }
-
-        if (itemsToSave.length > 0) {
-            onSave(itemsToSave, filesToSave);
-        } else {
-            addToast('No files were imported due to errors.', 'error');
-            setIsImporting(false);
-        }
-    };
-    
-    const getStatusText = (item: BulkAudioItem) => {
-        switch (item.status) {
-            case 'pending': return 'Pending';
-            case 'uploading': return `Uploading... ${Math.round(item.progress)}%`;
-            case 'analyzing': return 'Analyzing...';
-            case 'done': return 'Done';
-            case 'error': return item.errorMessage || 'Error';
-        }
+        }, 300);
     };
 
     return (
@@ -368,7 +239,7 @@ const BulkUploadForm: React.FC<{
                 <table className="w-full text-sm">
                     <thead className="text-left text-gray-500 dark:text-gray-400">
                         <tr>
-                            <th className="p-2">File Name & Status</th>
+                            <th className="p-2">File Name</th>
                             <th className="p-2">Type</th>
                             <th className="p-2">Artist</th>
                             <th className="p-2">Genre</th>
@@ -380,7 +251,7 @@ const BulkUploadForm: React.FC<{
                             <tr key={index} className="border-b dark:border-gray-700">
                                 <td className="p-2 align-top">
                                     <p className="font-semibold text-gray-800 dark:text-white truncate max-w-xs">{item.file.name}</p>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">{getStatusText(item)}</div>
+                                    <ProgressBar progress={item.progress} />
                                 </td>
                                 <td className="p-2 align-top">
                                     <select value={item.type} onChange={e => handleItemChange(index, 'type', e.target.value)} className="w-full bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-md p-1.5 text-sm">
@@ -403,16 +274,11 @@ const BulkUploadForm: React.FC<{
     );
 };
 
-interface AudioContentProps {
-    actionTrigger?: string;
-    clearActionTrigger?: () => void;
-}
-
-const AudioContent: React.FC<AudioContentProps> = ({ actionTrigger, clearActionTrigger }) => {
+const AudioContent: React.FC = () => {
     const { audioContentItems, loadContent, isLoading } = useContent();
     const { addToast } = useToast();
-    const { currentUser, deductCredits } = useAuth();
-    const { currentItem, playbackState, isPreviewing, playPreview, addToQueue } = usePlayer();
+    const { currentUser } = useAuth();
+    const { currentItem, playbackState, isPreviewing, playPreview } = usePlayer();
 
     const [isSingleItemModalOpen, setIsSingleItemModalOpen] = useState(false);
     const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
@@ -427,40 +293,6 @@ const AudioContent: React.FC<AudioContentProps> = ({ actionTrigger, clearActionT
     const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>([]);
     
     const isPlaying = playbackState === 'playing';
-
-    const runMusicAnalysis = useCallback(async (file: File): Promise<Partial<AudioContentType>> => {
-        const canProceed = await deductCredits(10, 'Music Analysis');
-        if (!canProceed) {
-            addToast('Insufficient credits for AI Music Analysis.', 'error');
-            throw new Error('Insufficient credits');
-        }
-        
-        try {
-            const prompt = `You are an expert music analysis tool. Analyze the following track based on its filename and generate metadata. Filename: '${file.name}'. Provide the BPM (beats per minute), musical key (e.g., 'C minor'), energy level (an integer from 1 to 10, where 10 is highest energy), and an array of 3-5 descriptive mood tags (e.g., 'driving', 'melancholic', 'summer vibe'). Return ONLY a JSON object matching the required schema.`;
-            
-            const response = await generateWithRetry({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: { responseMimeType: "application/json", responseSchema: analysisSchema }
-            });
-
-            const result = JSON.parse(response.text);
-            addToast(`Successfully analyzed "${file.name}"!`, 'success');
-            return result as Partial<AudioContentType>;
-        } catch (error) {
-            handleAiError(error, addToast);
-            throw error;
-        }
-    }, [deductCredits, addToast]);
-
-
-    useEffect(() => {
-        if (actionTrigger === 'uploadAudio' && clearActionTrigger) {
-            setEditingItem({});
-            setIsSingleItemModalOpen(true);
-            clearActionTrigger();
-        }
-    }, [actionTrigger, clearActionTrigger]);
 
     useEffect(() => {
         const fetchVoices = async () => {
@@ -555,7 +387,6 @@ const AudioContent: React.FC<AudioContentProps> = ({ actionTrigger, clearActionT
 
     const handleBulkSave = async (items: Partial<Omit<AudioContentType, 'id' | 'dateTime'>>[], files: File[]) => {
         if (!currentUser) return;
-        
         const newItems: AudioContentType[] = items.map((item, index) => ({
             id: `audio-${Date.now()}-${index}`,
             tenantId: currentUser.tenantId,
@@ -598,25 +429,14 @@ const AudioContent: React.FC<AudioContentProps> = ({ actionTrigger, clearActionT
         setIsDeleteModalOpen(false);
         setItemsToDelete([]);
     };
-
-    const handleAddToQueue = (item: AudioContentType) => {
-        if (!currentUser) return;
-        const contentItem = mapAudioToContentItem(item, currentUser);
-        if (contentItem) {
-            addToQueue([contentItem]);
-            addToast(`"${contentItem.title}" added to the playout queue.`, 'success');
-        } else {
-            addToast(`Could not add "${item.filename}" to queue.`, 'error');
-        }
-    };
     
     return (
         <>
             <Modal isOpen={isSingleItemModalOpen} onClose={() => { setIsSingleItemModalOpen(false); setEditingItem(null); }} title={editingItem?.id ? 'Edit Audio' : 'Upload Audio'}>
-                <AudioContentForm item={editingItem || {}} onSave={handleSave} onCancel={() => { setIsSingleItemModalOpen(false); setEditingItem(null); }} clonedVoices={clonedVoices} runMusicAnalysis={runMusicAnalysis} />
+                <AudioContentForm item={editingItem || {}} onSave={handleSave} onCancel={() => { setIsSingleItemModalOpen(false); setEditingItem(null); }} clonedVoices={clonedVoices} />
             </Modal>
             <Modal isOpen={isBulkUploadModalOpen} onClose={() => setIsBulkUploadModalOpen(false)} title={`Bulk Upload (${filesToBulkUpload.length} files)`}>
-                <BulkUploadForm files={filesToBulkUpload} onSave={handleBulkSave} onCancel={() => setIsBulkUploadModalOpen(false)} runMusicAnalysis={runMusicAnalysis} />
+                <BulkUploadForm files={filesToBulkUpload} onSave={handleBulkSave} onCancel={() => setIsBulkUploadModalOpen(false)} />
             </Modal>
             <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Confirm Deletion">
                 <div className="text-center">
@@ -708,7 +528,6 @@ const AudioContent: React.FC<AudioContentProps> = ({ actionTrigger, clearActionT
                                     <td className="px-4 py-4 text-center"><Checkmark checked={item.published}/></td>
                                     <td className="px-4 py-4"><div className="flex items-center space-x-3">
                                         <button onClick={() => playPreview(item as any)} className="text-brand-blue hover:text-blue-700">{isPreviewing && currentItem?.id === item.id && isPlaying ? <PauseCircleIcon /> : <PlayCircleIcon />}</button>
-                                        <button onClick={() => handleAddToQueue(item)} className="text-green-500 hover:text-green-700" title="Add to Playout Queue"><QueueAddIcon /></button>
                                         <button onClick={() => { setEditingItem(item); setIsSingleItemModalOpen(true); }} className="text-brand-blue hover:text-blue-700"><PencilIcon /></button>
                                         <button onClick={() => handleDelete(item.id)} className="text-red-500 hover:text-red-700"><TrashIcon /></button>
                                     </div></td>
