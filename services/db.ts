@@ -1,3 +1,4 @@
+
 import type { ContentItem, AudioContent, ArticleHistoryItem, SavedSchedule, Playlist, ClonedVoice, User, RssFeedSettings, SocialPost, Submission, Campaign, CreditUsageLog, Clockwheel, Webhook } from '../types';
 
 const DB_NAME = 'ai-music-station-db';
@@ -107,8 +108,8 @@ export const seedInitialData = async () => {
             promisifyRequest(submissionStore.put({ id: 'sub4', tenantId: defaultTenantId, type: 'Shoutout', from: 'Anonymous', message: 'This station is the best!', status: 'rejected', createdAt: new Date(Date.now() - 10800000).toISOString() })),
             
             // Seed Ads
-            promisifyRequest(contentStore.put({ id: 'ad-seed-1', tenantId: defaultTenantId, type: 'Ad', title: 'TechCorp Ad Spot', duration: '0:30', date: new Date().toISOString(), url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_2e132219f7.mp3' })),
-            promisifyRequest(contentStore.put({ id: 'ad-seed-2', tenantId: defaultTenantId, type: 'Ad', title: 'Coffee House Promo', duration: '0:15', date: new Date().toISOString(), url: 'https://cdn.pixabay.com/audio/2023/09/25/audio_5572b8347c.mp3' })),
+            promisifyRequest(contentStore.put({ id: 'ad-seed-1', tenantId: defaultTenantId, type: 'Ad', title: 'TechCorp Ad Spot', duration: '0:30', date: new Date().toISOString(), url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3' })),
+            promisifyRequest(contentStore.put({ id: 'ad-seed-2', tenantId: defaultTenantId, type: 'Ad', title: 'Coffee House Promo', duration: '0:15', date: new Date().toISOString(), url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3' })),
 
             // Seed Campaigns
             promisifyRequest(campaignStore.put({ id: 'camp-1', tenantId: defaultTenantId, name: 'Summer Sale 2024', sponsor: 'TechCorp', startDate: new Date('2024-07-01').toISOString(), endDate: new Date('2024-08-31').toISOString(), status: 'active', impressionGoal: 1000, impressions: 125, creativeIds: ['ad-seed-1'] })),
