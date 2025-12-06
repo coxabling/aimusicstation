@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import * as db from '../services/db';
-import { Playlist, ContentItem, AudioContent } from '../types';
+import { Playlist, ContentItem, AudioContent, MusicContent } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useContent } from '../contexts/ContentContext';
 import { ClipboardListIcon, SparklesIcon } from '../components/icons';
@@ -10,6 +10,13 @@ import { useToast } from '../contexts/ToastContext';
 import { marked } from 'marked';
 
 const PREP_COST = 200;
+
+// Helper to safely get the artist for music tracks
+const getTrackArtist = (track: ContentItem | AudioContent): string => {
+    // After filtering for item.type === 'Music', 'artist' property is guaranteed to exist
+    // on both MusicContent and AudioContent, though it might be undefined for AudioContent.
+    return (track as MusicContent | AudioContent).artist || 'Unknown Artist';
+};
 
 const ShowPrep: React.FC = () => {
     const { currentUser, deductCredits } = useAuth();
@@ -63,7 +70,8 @@ const ShowPrep: React.FC = () => {
         setGeneratedNotes('');
 
         try {
-            const tracklist = selectedPlaylistTracks.map((track, i) => `${i + 1}. "${'title' in track ? track.title : track.filename}" by ${track.artist}`).join('\n');
+            // Fix: Use getTrackArtist to safely access the artist property
+            const tracklist = selectedPlaylistTracks.map((track, i) => `${i + 1}. "${'title' in track ? track.title : track.filename}" by ${getTrackArtist(track)}`).join('\n');
 
             const prompt = `You are a professional and witty radio show producer. Your task is to create a "Show Prep" sheet for a radio host based on a given tracklist. The station's vibe is energetic and fun.
 
@@ -143,7 +151,8 @@ Format the entire output in clean, readable Markdown. Use headings for each sect
                             selectedPlaylistTracks.map((track, index) => (
                                 <div key={`${track.id}-${index}`} className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
                                     <p className="font-semibold text-sm text-gray-800 dark:text-white">{'title' in track ? track.title : track.filename}</p>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">{track.artist}</p>
+                                    {/* Fix: Use getTrackArtist to safely access the artist property */}
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">{getTrackArtist(track)}</p>
                                 </div>
                             ))
                         ) : (
