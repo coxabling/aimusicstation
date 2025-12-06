@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { RadioIcon, SparklesIcon, MusicIcon, DocumentTextIcon, ScheduleIcon, PlaylistIcon, DollarSignIcon, ClipboardListIcon, UsersIcon } from '../components/icons';
 import StatCard from '../components/StatCard';
@@ -333,7 +332,7 @@ export default function Dashboard({ setActivePage }: DashboardProps) {
                 )}
             </div>
         </div>
+      </div>
     </div>
   );
 }
-

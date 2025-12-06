@@ -11,7 +11,7 @@ interface StatCardProps {
 }
 
 // FIX: Wrapped component's content in a single root div and applied `className` to it.
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon, statusColor, className }) => (
+const StatCard: React.FC<StatCardProps> = React.memo(({ title, value, icon, statusColor, className }) => (
   <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 flex items-center space-x-4 ${className || ''}`}>
     <div className={`p-3 rounded-full ${statusColor ? statusColor : 'bg-blue-100 dark:bg-blue-900 text-brand-blue'}`}>
       {icon}
@@ -21,6 +21,6 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, statusColor, cl
       <p className="text-2xl font-bold text-gray-800 dark:text-white">{value}</p>
     </div>
   </div>
-);
+));
 
 export default StatCard;
