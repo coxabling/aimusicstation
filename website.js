@@ -4,6 +4,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const noContentMessage = document.getElementById('no-content-message');
     const mainContent = document.querySelector('main');
 
+    // Helper to parse duration string (e.g., "3:45") to seconds
+    function parseDurationToSeconds(durationStr) {
+        if (!durationStr || typeof durationStr !== 'string' || !durationStr.includes(':')) return 0;
+        const parts = durationStr.split(':').map(Number).filter(n => !isNaN(n));
+        if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        if (parts.length === 2) return parts[0] * 60 + parts[1];
+        if (parts.length === 1) return parts[0];
+        return 0;
+    }
+
+    // Helper to format seconds into HH:MM or MM:SS
+    function formatTime(totalSeconds) {
+        if (isNaN(totalSeconds) || totalSeconds < 0) return '0:00';
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = Math.floor(totalSeconds % 60);
+
+        if (hours > 0) {
+            return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
     // Helper to get consistent artist/source info
     function getArtistOrSource(item) {
         switch (item.type) {
@@ -24,13 +47,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Helper to get consistent color classes for content types
     function getScheduleItemTypeColor(type) {
         const colors = {
-            'Music': 'bg-blue-500',
-            'Article': 'bg-green-500',
-            'Ad': 'bg-yellow-500',
-            'Custom Audio': 'bg-indigo-500',
-            'RSS Feed': 'bg-purple-500',
+            'Music': 'bg-blue-500 border-blue-700',
+            'Article': 'bg-green-500 border-green-700',
+            'Ad': 'bg-yellow-500 border-yellow-700',
+            'Custom Audio': 'bg-indigo-500 border-indigo-700',
+            'RSS Feed': 'bg-purple-500 border-purple-700',
         };
-        return colors[type] || 'bg-gray-500';
+        return colors[type] || 'bg-gray-500 border-gray-700';
     }
 
     try {
@@ -38,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!rawData) {
             if (mainContent) mainContent.style.display = 'none';
             if (noContentMessage) noContentMessage.classList.remove('hidden');
-            console.warn('No public website data found in localStorage.');
+            console.warn('No public website data found in localStorage. The CMS might not have published yet.');
             return;
         }
 
@@ -46,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const { settings, station, articles, schedule } = data;
 
         // --- Populate Header & Footer ---
-        document.title = station.name || 'AI Music Station';
+        document.title = station.name ? `${station.name} - AI Music Station` : 'AI Music Station';
         const stationNameEl = document.getElementById('station-name');
         if (stationNameEl) stationNameEl.textContent = station.name;
         const footerStationNameEl = document.getElementById('footer-station-name');
@@ -56,6 +79,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (stationLogoEl && station.logo) {
             stationLogoEl.src = station.logo;
             stationLogoEl.classList.remove('hidden');
+            stationLogoEl.setAttribute('aria-label', `${station.name} logo`);
+        } else if (stationLogoEl) {
+            stationLogoEl.classList.add('hidden');
         }
 
         // --- Populate Hero Section ---
@@ -66,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // --- Toggle Sections ---
         const featuredSection = document.getElementById('featured-section');
-        if (featuredSection && !settings.showFeatured) featuredSection.style.display = 'none';
+        if (featuredSection) featuredSection.style.display = settings.showFeatured ? 'block' : 'none';
         
         const scheduleSection = document.getElementById('schedule-section');
         if (scheduleSection) scheduleSection.style.display = settings.showSchedule ? 'block' : 'none';
@@ -78,16 +104,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const scheduleListEl = document.getElementById('schedule-list');
         if (scheduleListEl && settings.showSchedule) {
             if (schedule && schedule.length > 0) {
-                scheduleListEl.innerHTML = schedule.map(item => {
+                let currentTime = new Date(); // Start time for the first item in the visible schedule
+
+                scheduleListEl.innerHTML = schedule.map((item, index) => {
+                    const durationSeconds = parseDurationToSeconds(item.duration);
+                    const startTime = new Date(currentTime.getTime());
+                    const endTime = new Date(startTime.getTime() + durationSeconds * 1000);
+                    
                     const itemColorClass = getScheduleItemTypeColor(item.type);
                     const secondaryInfo = getArtistOrSource(item);
+
+                    // Update currentTime for the next item
+                    currentTime = endTime;
+
                     return `
-                        <div class="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md flex justify-between items-center border-l-4 ${itemColorClass.replace('bg-', 'border-')}">
-                            <div>
+                        <div class="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md flex flex-col sm:flex-row justify-between items-start sm:items-center border-l-4 ${itemColorClass.replace('bg-', 'border-')}">
+                            <div class="mb-2 sm:mb-0">
                                 <p class="font-semibold text-gray-800 dark:text-white">${item.title}</p>
                                 <p class="text-sm text-gray-500 dark:text-gray-400">${secondaryInfo}</p>
                             </div>
-                            <span class="text-sm font-mono text-gray-400 dark:text-gray-500">${item.duration || '0:00'}</span>
+                            <span class="text-sm font-mono text-gray-500 dark:text-gray-400" aria-label="Duration">${startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                     `;
                 }).join('');
@@ -101,12 +137,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (blogPostsEl && settings.showBlog) {
             if (articles && articles.length > 0) {
                 blogPostsEl.innerHTML = articles.map(article => `
-                    <article class="border-b dark:border-gray-700 pb-6">
-                        <h4 class="text-xl font-bold text-gray-900 dark:text-white hover:text-blue-600">
-                            <a href="#">${article.title}</a>
+                    <article class="border-b dark:border-gray-700 pb-6 last:border-b-0">
+                        <h4 class="text-xl font-bold text-gray-900 dark:text-white hover:text-blue-600" aria-label="Article title: ${article.title}">
+                            <a href="#" class="block">${article.title}</a>
                         </h4>
                         <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Posted on ${new Date(article.date).toLocaleDateString()}</p>
-                        <p class="text-gray-600 dark:text-gray-300">${(article.content || '').substring(0, 150)}...</p>
+                        <p class="text-gray-600 dark:text-gray-300">${(article.content || '').substring(0, 180)}... <a href="#" class="text-brand-blue hover:underline" aria-label="Read more about ${article.title}">Read More</a></p>
                     </article>
                 `).join('');
             } else {
