@@ -1,17 +1,23 @@
 
 import React, { useState, useEffect } from 'react';
-import { RadioIcon, SparklesIcon, MusicIcon, DocumentTextIcon, ScheduleIcon, PlaylistIcon, DollarSignIcon } from '../components/icons';
+import { RadioIcon, SparklesIcon, MusicIcon, DocumentTextIcon, ScheduleIcon, PlaylistIcon, DollarSignIcon, ClipboardListIcon, UsersIcon } from '../components/icons';
 import StatCard from '../components/StatCard';
 import { vaultContent, VaultContentItem, mapVaultItemToAudioContent } from '../services/vaultContent';
 import * as db from '../services/db';
 import { generateWithRetry } from '../services/ai';
 import { useToast } from '../contexts/ToastContext';
-import { AudioContent, isPlayableContent, Playlist } from '../types';
+import { AudioContent, isPlayableContent, Playlist, Submission } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useContent } from '../contexts/ContentContext';
+import type { Page } from '../App';
 
-const Dashboard: React.FC = () => {
+interface DashboardProps {
+    setActivePage: (page: Page) => void;
+}
+
+// FIX: Changed to a named function export to address potential module resolution issues.
+export default function Dashboard({ setActivePage }: DashboardProps) {
     const { stationSettings, saveStationSettings, currentUser } = useAuth();
     const { addToast } = useToast();
     const { currentItem, playoutQueue, currentQueueIndex, isPreviewing } = usePlayer();
@@ -19,6 +25,9 @@ const Dashboard: React.FC = () => {
 
     const [playlists, setPlaylists] = useState<Playlist[]>([]);
     const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(true);
+
+    const [pendingSubmissionsCount, setPendingSubmissionsCount] = useState(0);
+    const [recentMusicPlaylist, setRecentMusicPlaylist] = useState<Playlist | null>(null); // For Show Prep suggestion
 
     const handleVibeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         if (currentUser?.role !== 'Admin') return;
@@ -41,16 +50,31 @@ const Dashboard: React.FC = () => {
     }, []);
     
     useEffect(() => {
-        const fetchPlaylists = async () => {
+        const fetchPlaylistsAndSubmissions = async () => {
             if (currentUser) {
                 setIsLoadingPlaylists(true);
                 const loadedPlaylists = await db.getAllPlaylists(currentUser.tenantId);
                 setPlaylists(loadedPlaylists);
                 setIsLoadingPlaylists(false);
+
+                const submissions = await db.getAllSubmissions(currentUser.tenantId);
+                setPendingSubmissionsCount(submissions.filter(s => s.status === 'pending').length);
+
+                // Find the most recently created music playlist for Show Prep suggestion
+                const musicPlaylists = loadedPlaylists.filter(p => p.trackIds.some(id => {
+                    const item = contentItems.find(ci => ci.id === id) || audioContentItems.find(ai => ai.id === id);
+                    return item && item.type === 'Music';
+                }));
+                if (musicPlaylists.length > 0) {
+                    const sortedPlaylists = [...musicPlaylists].sort((a, b) => new Date(b.id).getTime() - new Date(a.id).getTime());
+                    setRecentMusicPlaylist(sortedPlaylists[0]);
+                } else {
+                    setRecentMusicPlaylist(null);
+                }
             }
         };
-        fetchPlaylists();
-    }, [currentUser]);
+        fetchPlaylistsAndSubmissions();
+    }, [currentUser, contentItems, audioContentItems]); // Added contentItems/audioContentItems to dependencies for playlist filter logic
 
 
     useEffect(() => {
@@ -123,7 +147,7 @@ const Dashboard: React.FC = () => {
     const upNextItem = !isPreviewing && currentQueueIndex >= 0 ? playoutQueue[currentQueueIndex + 1] : null;
 
     const getSecondaryInfo = (item: any) => {
-       switch(item.type) { case 'Music': case 'Custom Audio': return item.artist; case 'RSS Feed': return item.source; default: return item.type; }
+       switch(item.type) { case 'Music': case 'Custom Audio': return item.artist; case 'RSS Feed': return item.source; case 'Article': return 'Article'; default: return item.type; }
     };
     
     const totalContentCount = contentItems.length + audioContentItems.length;
@@ -188,7 +212,7 @@ const Dashboard: React.FC = () => {
                 <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
                     <p className="font-semibold text-gray-700 dark:text-gray-300">Station is Offline</p>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Go to the Schedule page to start your broadcast.</p>
-                     <button onClick={() => { (document.querySelector('a[data-page="schedule"]') as HTMLElement)?.click(); }} className="mt-4 px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none flex items-center justify-center space-x-2 mx-auto">
+                     <button onClick={() => { setActivePage('schedule'); }} className="mt-4 px-4 py-2 bg-brand-blue text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none flex items-center justify-center space-x-2 mx-auto">
                         <ScheduleIcon />
                         <span>Go to Schedule</span>
                     </button>
@@ -233,29 +257,83 @@ const Dashboard: React.FC = () => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
         <h3 className="text-xl font-semibold mb-4 flex items-center text-gray-800 dark:text-white">
             <SparklesIcon className="h-5 w-5 mr-2 text-purple-500" />
-            AI Recommendations from the Vault
+            AI Insights & Recommendations
         </h3>
-        {isLoadingRecs ? (
-            <p className="text-gray-500 dark:text-gray-400">Analyzing your library to find recommendations...</p>
-        ) : recommendations.length > 0 ? (
-            <div className="space-y-3">
-                {recommendations.map(item => (
-                    <div key={item.id} className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg flex justify-between items-center">
-                        <div>
-                            <p className="font-semibold text-gray-800 dark:text-white">{item.filename}</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">{item.genre}</p>
-                        </div>
-                        <button onClick={() => handleImport(item)} className="px-3 py-1 text-sm bg-brand-blue text-white rounded-md hover:bg-blue-700">Add to Library</button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* AI Content Recommendations (from Vault) */}
+            <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 space-y-3">
+                <h4 className="font-semibold text-lg text-gray-800 dark:text-white flex items-center"><MusicIcon className="h-5 w-5 mr-2 text-brand-blue" /> Content Suggestions</h4>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Based on your library, here are some music beds you might like from the vault:</p>
+                {isLoadingRecs ? (
+                    <p className="text-gray-500 dark:text-gray-400">Analyzing your library to find recommendations...</p>
+                ) : recommendations.length > 0 ? (
+                    <div className="space-y-2">
+                        {recommendations.map(item => (
+                            <div key={item.id} className="bg-white dark:bg-gray-700 p-2 rounded-md flex justify-between items-center text-sm">
+                                <div>
+                                    <p className="font-semibold text-gray-800 dark:text-white">{item.filename}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">{item.genre}</p>
+                                </div>
+                                <button onClick={() => handleImport(item)} className="px-3 py-1 text-xs bg-brand-blue text-white rounded-md hover:bg-blue-700">Add to Library</button>
+                            </div>
+                        ))}
                     </div>
-                ))}
+                ) : (
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">Not enough data to generate recommendations. Add more music!</p>
+                )}
             </div>
-        ) : (
-            <p className="text-gray-500 dark:text-gray-400">Not enough data to generate recommendations.</p>
-        )}
-    </div>
 
+            {/* AI Playlist Suggestions */}
+            <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 space-y-3">
+                <h4 className="font-semibold text-lg text-gray-800 dark:text-white flex items-center"><PlaylistIcon className="h-5 w-5 mr-2 text-green-500" /> Playlist Ideas</h4>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Generate new playlists based on themes or moods, or let AI analyze your content for ideas.</p>
+                <button 
+                    onClick={() => setActivePage('playlists')} 
+                    className="w-full px-4 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none flex items-center justify-center space-x-2"
+                >
+                    <SparklesIcon className="h-5 w-5 mr-2" />
+                    <span>Generate New Playlist</span>
+                </button>
+            </div>
+
+            {/* AI Show Prep Assistant */}
+            <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 space-y-3">
+                <h4 className="font-semibold text-lg text-gray-800 dark:text-white flex items-center"><ClipboardListIcon className="h-5 w-5 mr-2 text-yellow-500" /> Show Prep Assistant</h4>
+                {recentMusicPlaylist ? (
+                    <>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">Get show notes for your latest playlist: <span className="font-medium text-gray-800 dark:text-white">{recentMusicPlaylist.name}</span></p>
+                        <button 
+                            onClick={() => setActivePage('showPrep')} 
+                            className="w-full px-4 py-2 bg-yellow-600 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-700 focus:outline-none flex items-center justify-center space-x-2"
+                        >
+                            <SparklesIcon className="h-5 w-5 mr-2" />
+                            <span>Run Show Prep</span>
+                        </button>
+                    </>
+                ) : (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Create a music playlist to start generating show prep!</p>
+                )}
+            </div>
+
+            {/* Audience Interaction Insights */}
+            <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 space-y-3">
+                <h4 className="font-semibold text-lg text-gray-800 dark:text-white flex items-center"><UsersIcon className="h-5 w-5 mr-2 text-indigo-500" /> Audience Interaction</h4>
+                {pendingSubmissionsCount > 0 ? (
+                    <>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">You have <span className="font-bold text-red-500">{pendingSubmissionsCount}</span> new pending submissions!</p>
+                        <button 
+                            onClick={() => setActivePage('audience')} 
+                            className="w-full px-4 py-2 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 focus:outline-none flex items-center justify-center space-x-2"
+                        >
+                            <span>Review Submissions</span>
+                        </button>
+                    </>
+                ) : (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">No new audience submissions. Everything's clear!</p>
+                )}
+            </div>
+        </div>
     </div>
   );
-};
+}
 
-export default Dashboard;
